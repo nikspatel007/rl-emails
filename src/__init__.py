@@ -5,6 +5,7 @@ This package provides the core components for email prioritization RL:
 - policy_network: PyTorch policy network for action selection
 - dataset: PyTorch Dataset for email training data
 - trainer: PPO training loop with checkpointing and logging
+- multi_task_extraction: LLM-based multi-task extraction from emails
 
 Optional modules (require additional dependencies):
 - email_action: Action representation (requires numpy)
@@ -18,6 +19,16 @@ from .features import (
     CombinedFeatureExtractor,
     extract_combined_features,
     FEATURE_DIMS,
+)
+
+# Multi-task extraction
+from .multi_task_extraction import (
+    ExtractedTask,
+    TaskType,
+    extract_tasks,
+    extract_tasks_batch,
+    extract_tasks_rule_based,
+    extract_tasks_llm,
 )
 
 # Policy network and training require torch
@@ -53,6 +64,13 @@ __all__ = [
     'CombinedFeatureExtractor',
     'extract_combined_features',
     'FEATURE_DIMS',
+    # Multi-task extraction
+    'ExtractedTask',
+    'TaskType',
+    'extract_tasks',
+    'extract_tasks_batch',
+    'extract_tasks_rule_based',
+    'extract_tasks_llm',
 ]
 
 if HAS_TORCH:
