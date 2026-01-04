@@ -25,12 +25,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Default model: all-MiniLM-L6-v2
-# - 384-dim embeddings
-# - Fast inference (~14K sentences/sec on CPU)
-# - Good quality for semantic similarity
-DEFAULT_MODEL = 'all-MiniLM-L6-v2'
-DEFAULT_EMBEDDING_DIM = 384
+# Default model: all-mpnet-base-v2
+# - 768-dim embeddings
+# - High quality semantic representations
+# - Better disambiguation of similar texts
+DEFAULT_MODEL = 'all-mpnet-base-v2'
+DEFAULT_EMBEDDING_DIM = 768
 
 # Maximum text length to process (chars)
 MAX_SUBJECT_LEN = 256
@@ -59,7 +59,7 @@ class ContentFeatures:
         """Convert to feature vector for ML pipeline.
 
         Returns only the combined embedding to keep dimensions manageable.
-        Total: embedding_dim (default 384)
+        Total: embedding_dim (default 768)
         """
         if HAS_NUMPY:
             return np.asarray(self.combined_embedding, dtype=np.float32)
@@ -80,7 +80,7 @@ class ContentFeatureExtractor:
     Example:
         >>> extractor = ContentFeatureExtractor()
         >>> features = extractor.extract(email)
-        >>> embedding = features.to_feature_vector()  # 384-dim vector
+        >>> embedding = features.to_feature_vector()  # 768-dim vector
     """
 
     _model: Optional["SentenceTransformer"] = None

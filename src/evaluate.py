@@ -259,7 +259,7 @@ def extract_features_batch(
     Args:
         emails: List of email dicts
         batch_size: Batch size for processing
-        include_content: Whether to include content embeddings (384-dim)
+        include_content: Whether to include content embeddings (768-dim)
 
     Returns:
         List of feature vectors
@@ -480,7 +480,7 @@ def main():
     parser.add_argument(
         '--include-content',
         action='store_true',
-        help='Include content embeddings (384-dim sentence transformer)',
+        help='Include content embeddings (768-dim sentence transformer)',
     )
     parser.add_argument(
         '--input-dim',

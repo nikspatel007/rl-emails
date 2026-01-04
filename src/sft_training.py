@@ -828,7 +828,7 @@ Examples:
     parser.add_argument(
         '--include-content',
         action='store_true',
-        help='Include content embeddings (384-dim sentence transformer)',
+        help='Include content embeddings (768-dim sentence transformer)',
     )
 
     args = parser.parse_args()
