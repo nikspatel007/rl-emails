@@ -7,6 +7,7 @@ This package provides feature extraction for the email RL policy network:
 - people: Sender importance and relationship scoring
 - temporal: Time-based features (hour, day, freshness, thread timing)
 - content: Semantic embeddings from email body text
+- relationship: Communication graph and relational priority model
 - combined: Unified feature vector for policy network input
 """
 
@@ -55,6 +56,14 @@ from .content import (
     DEFAULT_EMBEDDING_DIM,
 )
 
+from .relationship import (
+    CommunicationGraph,
+    RelationshipFeatures,
+    UserBaseline,
+    build_communication_graph,
+    process_email_dataset,
+)
+
 from .combined import (
     CombinedFeatures,
     CombinedFeatureExtractor,
@@ -99,6 +108,12 @@ __all__ = [
     'extract_content_features',
     'get_content_extractor',
     'DEFAULT_EMBEDDING_DIM',
+    # Relationship features
+    'CommunicationGraph',
+    'RelationshipFeatures',
+    'UserBaseline',
+    'build_communication_graph',
+    'process_email_dataset',
     # Combined features
     'CombinedFeatures',
     'CombinedFeatureExtractor',
