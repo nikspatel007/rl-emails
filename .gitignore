@@ -9,3 +9,11 @@ data/
 
 # Beads redirect (local runtime)
 .beads/
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
