@@ -96,6 +96,20 @@ DEFINE INDEX emails_action ON emails COLUMNS action;
 DEFINE INDEX emails_split ON emails COLUMNS split;
 DEFINE INDEX emails_gmail_thread ON emails COLUMNS gmail_thread_id;
 
+-- Sender features table: per-sender aggregated metrics
+DEFINE TABLE sender_features SCHEMAFULL;
+DEFINE FIELD sender_email ON sender_features TYPE string;
+DEFINE FIELD total_emails ON sender_features TYPE int DEFAULT 0;
+DEFINE FIELD avg_response_rate ON sender_features TYPE option<float>;
+DEFINE FIELD is_service ON sender_features TYPE bool DEFAULT false;
+DEFINE FIELD service_type ON sender_features TYPE option<string>;  -- e.g., "newsletter", "notification", "billing"
+DEFINE FIELD last_interaction ON sender_features TYPE option<datetime>;
+DEFINE FIELD relationship_score ON sender_features TYPE option<float>;
+DEFINE FIELD created_at ON sender_features TYPE datetime DEFAULT time::now();
+DEFINE FIELD updated_at ON sender_features TYPE datetime DEFAULT time::now();
+
+DEFINE INDEX sender_features_email ON sender_features COLUMNS sender_email UNIQUE;
+
 -- ============================================================================
 -- EDGE DEFINITIONS (Graph Relationships)
 -- ============================================================================
