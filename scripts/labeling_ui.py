@@ -117,6 +117,7 @@ class EmailLoader:
 
         db = AsyncSurreal(self.url)
         try:
+            await db.connect()
             await db.signin({'username': 'root', 'password': 'root'})
             await db.use(self.namespace, self.database)
 
@@ -158,6 +159,7 @@ class EmailLoader:
         if missing:
             db = AsyncSurreal(self.url)
             try:
+                await db.connect()
                 await db.signin({'username': 'root', 'password': 'root'})
                 await db.use(self.namespace, self.database)
 

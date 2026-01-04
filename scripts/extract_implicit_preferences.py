@@ -118,6 +118,7 @@ class PreferenceExtractor:
     async def connect(self, username: str = 'root', password: str = 'root'):
         """Connect to SurrealDB."""
         self.db = AsyncSurreal(self.url)
+        await self.db.connect()
         await self.db.signin({'username': username, 'password': password})
         await self.db.use(self.namespace, self.database)
 
