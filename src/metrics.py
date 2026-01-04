@@ -93,11 +93,13 @@ class EmailMetrics:
     # Priority ranking
     spearman_correlation: float  # Spearman rank correlation
     kendall_tau: float  # Kendall's tau correlation
-    top_k_precision: dict[int, float] = field(default_factory=dict)  # Precision at k
 
     # Timing alignment
     timing_mae: float  # Mean absolute error in timing class distance
     timing_within_one: float  # Proportion within one timing class
+
+    # Fields with defaults must come last
+    top_k_precision: dict[int, float] = field(default_factory=dict)  # Precision at k
 
     def to_dict(self) -> dict:
         """Convert to dictionary for logging."""
