@@ -37,7 +37,7 @@ class TestRewardConfig(unittest.TestCase):
 
     def test_default_config(self):
         config = RewardConfig()
-        self.assertEqual(config.input_dim, 60)
+        self.assertEqual(config.input_dim, 69)  # Updated for content features
         self.assertEqual(config.hidden_dims, (256, 128, 64))
         self.assertEqual(config.dropout, 0.1)
         self.assertTrue(config.use_layer_norm)
@@ -79,37 +79,37 @@ class TestEmailRewardModel(unittest.TestCase):
     """Tests for EmailRewardModel."""
 
     def setUp(self):
-        self.config = RewardConfig(input_dim=60, hidden_dims=(128, 64))
+        self.config = RewardConfig(input_dim=69, hidden_dims=(128, 64))
         self.model = EmailRewardModel(self.config)
         self.batch_size = 32
 
     def test_forward_output_shape(self):
-        x = torch.randn(self.batch_size, 60)
+        x = torch.randn(self.batch_size, 69)
         output = self.model(x)
 
         self.assertEqual(output.shape, (self.batch_size, 1))
 
     def test_forward_single_sample(self):
-        x = torch.randn(1, 60)
+        x = torch.randn(1, 69)
         output = self.model(x)
 
         self.assertEqual(output.shape, (1, 1))
 
     def test_get_reward_batch(self):
-        x = torch.randn(self.batch_size, 60)
+        x = torch.randn(self.batch_size, 69)
         rewards = self.model.get_reward(x)
 
         self.assertEqual(rewards.shape, (self.batch_size,))
 
     def test_get_reward_single(self):
-        x = torch.randn(60)
+        x = torch.randn(69)
         reward = self.model.get_reward(x)
 
         self.assertEqual(reward.shape, ())
 
     def test_preference_loss_computation(self):
-        preferred = torch.randn(16, 60)
-        rejected = torch.randn(16, 60)
+        preferred = torch.randn(16, 69)
+        rejected = torch.randn(16, 69)
 
         loss = self.model.preference_loss(preferred, rejected)
 
@@ -117,8 +117,8 @@ class TestEmailRewardModel(unittest.TestCase):
         self.assertTrue(loss.item() >= 0)  # Loss should be non-negative
 
     def test_preference_loss_with_margin(self):
-        preferred = torch.randn(16, 60)
-        rejected = torch.randn(16, 60)
+        preferred = torch.randn(16, 69)
+        rejected = torch.randn(16, 69)
         margin = torch.ones(16) * 2.0
 
         # Enable margin loss
@@ -128,8 +128,8 @@ class TestEmailRewardModel(unittest.TestCase):
         self.assertEqual(loss.shape, ())
 
     def test_preference_accuracy(self):
-        preferred = torch.randn(16, 60)
-        rejected = torch.randn(16, 60)
+        preferred = torch.randn(16, 69)
+        rejected = torch.randn(16, 69)
 
         accuracy = self.model.preference_accuracy(preferred, rejected)
 
@@ -160,7 +160,7 @@ class TestPreferencePairGeneration(unittest.TestCase):
     """Tests for preference pair generation."""
 
     def setUp(self):
-        self.features = torch.randn(100, 60)
+        self.features = torch.randn(100, 69)
         self.actions = (
             ['REPLIED'] * 20 +
             ['ARCHIVED'] * 30 +
@@ -229,7 +229,7 @@ class TestPreferencePairDataset(unittest.TestCase):
     """Tests for PreferencePairDataset."""
 
     def setUp(self):
-        self.features = torch.randn(50, 60)
+        self.features = torch.randn(50, 69)
         self.actions = (
             ['REPLIED'] * 10 +
             ['ARCHIVED'] * 15 +
@@ -282,9 +282,9 @@ class TestRewardModelTrainer(unittest.TestCase):
     """Tests for RewardModelTrainer."""
 
     def setUp(self):
-        self.config = RewardConfig(input_dim=60, hidden_dims=(64, 32))
+        self.config = RewardConfig(input_dim=69, hidden_dims=(64, 32))
         self.model = EmailRewardModel(self.config)
-        self.features = torch.randn(50, 60)
+        self.features = torch.randn(50, 69)
         self.actions = (
             ['REPLIED'] * 10 +
             ['ARCHIVED'] * 15 +
@@ -359,7 +359,7 @@ class TestCreateRewardModel(unittest.TestCase):
     def test_create_default(self):
         model = create_reward_model()
         self.assertIsInstance(model, EmailRewardModel)
-        self.assertEqual(model.config.input_dim, 60)
+        self.assertEqual(model.config.input_dim, 69)
 
     def test_create_custom_dims(self):
         model = create_reward_model(input_dim=100, hidden_dims=(512, 256))
@@ -378,8 +378,8 @@ class TestRewardModelLearning(unittest.TestCase):
         """Model should learn to prefer high-value features over low-value."""
         # Create synthetic data where "good" emails have positive features
         n_samples = 100
-        good_features = torch.randn(n_samples, 60) + 1.0  # Shifted positive
-        bad_features = torch.randn(n_samples, 60) - 1.0   # Shifted negative
+        good_features = torch.randn(n_samples, 69) + 1.0  # Shifted positive
+        bad_features = torch.randn(n_samples, 69) - 1.0   # Shifted negative
 
         features = torch.cat([good_features, bad_features])
         actions = ['REPLIED'] * n_samples + ['DELETED'] * n_samples

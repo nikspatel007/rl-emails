@@ -225,7 +225,7 @@ class EmailRLTrainer:
         from .policy_network import ActionHead
 
         policy_config = PolicyConfig(
-            input_dim=60,  # CombinedFeatures dimension
+            input_dim=69,  # CombinedFeatures dimension (with content features)
             hidden_dims=self.config.hidden_dims,
             dropout=self.config.dropout,
             use_layer_norm=self.config.use_layer_norm,

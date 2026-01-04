@@ -68,7 +68,7 @@ class TestEmailDataset:
 
         # Test __getitem__
         features, action = dataset[0]
-        assert features.shape == (60,)  # Combined feature dimension
+        assert features.shape == (69,)  # Combined feature dimension (with content features)
         assert isinstance(action, str)
         assert action in ['REPLIED', 'FORWARDED', 'ARCHIVED', 'DELETED', 'KEPT']
 
@@ -103,7 +103,7 @@ class TestGRPOTrainer:
 
     def test_sample_actions(self, trainer):
         """Test action sampling."""
-        features = torch.randn(4, 60)
+        features = torch.randn(4, 69)
         actions, timings, log_probs = trainer.sample_actions(features, num_samples=3)
 
         assert actions.shape == (4, 3)
@@ -146,7 +146,7 @@ class TestGRPOTrainer:
 
     def test_train_step(self, trainer):
         """Test single training step."""
-        features = torch.randn(8, 60)
+        features = torch.randn(8, 69)
         actions = ['REPLIED', 'ARCHIVED', 'DELETED', 'KEPT',
                    'FORWARDED', 'REPLIED', 'ARCHIVED', 'DELETED']
 
@@ -165,7 +165,7 @@ class TestGRPOTrainer:
 
     def test_policy_loss_computation(self, trainer):
         """Test policy loss with clipping."""
-        features = torch.randn(4, 60)
+        features = torch.randn(4, 69)
         actions = torch.randint(0, 6, (4, 3))
         timings = torch.randint(0, 5, (4, 3))
         old_log_probs = torch.randn(4, 3) - 2  # Negative log probs
@@ -203,7 +203,7 @@ class TestComputeActionReward:
     def test_reward_with_ground_truth(self):
         """Test reward computation with ground truth matching."""
         reward_model = create_reward_model()
-        features = torch.randn(4, 60)
+        features = torch.randn(4, 69)
 
         # Actions that match ground truth should get bonus
         actions = torch.tensor([0, 2, 4, 3])  # reply_now, forward, delete, archive
@@ -221,7 +221,7 @@ class TestComputeActionReward:
     def test_reward_without_ground_truth(self):
         """Test reward computation without ground truth."""
         reward_model = create_reward_model()
-        features = torch.randn(4, 60)
+        features = torch.randn(4, 69)
         actions = torch.randint(0, 6, (4,))
         timings = torch.zeros(4, dtype=torch.long)
 
@@ -234,7 +234,7 @@ class TestComputeActionReward:
     def test_reward_multi_sample(self):
         """Test reward with multiple samples per state."""
         reward_model = create_reward_model()
-        features = torch.randn(4, 60)
+        features = torch.randn(4, 69)
         actions = torch.randint(0, 6, (4, 3))  # 3 samples per state
         timings = torch.zeros(4, 3, dtype=torch.long)
 

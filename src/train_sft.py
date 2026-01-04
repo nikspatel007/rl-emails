@@ -274,7 +274,7 @@ def main():
     # Create model
     hidden_dims = tuple(int(x) for x in args.hidden_dims.split(','))
     config = PolicyConfig(
-        input_dim=60,  # CombinedFeatures dimension
+        input_dim=69,  # CombinedFeatures dimension (with content features)
         hidden_dims=hidden_dims,
         dropout=args.dropout,
     )

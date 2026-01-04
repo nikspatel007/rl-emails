@@ -40,7 +40,7 @@ class TestPolicyConfig(unittest.TestCase):
 
     def test_default_config(self):
         config = PolicyConfig()
-        self.assertEqual(config.input_dim, 60)
+        self.assertEqual(config.input_dim, 69)  # Updated for content features
         self.assertEqual(config.hidden_dims, (256, 128, 64))
         self.assertEqual(config.dropout, 0.1)
         self.assertTrue(config.use_layer_norm)
@@ -61,19 +61,19 @@ class TestFeatureEncoder(unittest.TestCase):
     """Tests for FeatureEncoder."""
 
     def test_encoder_output_shape(self):
-        config = PolicyConfig(input_dim=60, hidden_dims=(128, 64))
+        config = PolicyConfig(input_dim=69, hidden_dims=(128, 64))
         encoder = FeatureEncoder(config)
 
-        x = torch.randn(32, 60)
+        x = torch.randn(32, 69)
         output = encoder(x)
 
         self.assertEqual(output.shape, (32, 64))
 
     def test_encoder_single_sample(self):
-        config = PolicyConfig(input_dim=60, hidden_dims=(128,))
+        config = PolicyConfig(input_dim=69, hidden_dims=(128,))
         encoder = FeatureEncoder(config)
 
-        x = torch.randn(1, 60)
+        x = torch.randn(1, 69)
         output = encoder(x)
 
         self.assertEqual(output.shape, (1, 128))
@@ -116,7 +116,7 @@ class TestEmailPolicyNetwork(unittest.TestCase):
     """Tests for EmailPolicyNetwork."""
 
     def setUp(self):
-        self.config = PolicyConfig(input_dim=60, hidden_dims=(128, 64))
+        self.config = PolicyConfig(input_dim=69, hidden_dims=(128, 64))
         self.policy = EmailPolicyNetwork(self.config)
         self.batch_size = 32
 
@@ -204,7 +204,7 @@ class TestEmailPolicyNetwork(unittest.TestCase):
         self.assertEqual(value.shape, (self.batch_size,))
 
     def test_predict_greedy(self):
-        x = torch.randn(1, 60)
+        x = torch.randn(1, 69)
         action_idx, timing_idx, priority = self.policy.predict_greedy(x)
 
         self.assertIsInstance(action_idx, int)
@@ -238,11 +238,11 @@ class TestDuelingPolicyNetwork(unittest.TestCase):
     """Tests for DuelingPolicyNetwork."""
 
     def setUp(self):
-        self.config = PolicyConfig(input_dim=60, hidden_dims=(128, 64))
+        self.config = PolicyConfig(input_dim=69, hidden_dims=(128, 64))
         self.policy = DuelingPolicyNetwork(self.config)
 
     def test_forward_output_shapes(self):
-        x = torch.randn(32, 60)
+        x = torch.randn(32, 69)
         output = self.policy(x)
 
         self.assertEqual(output.action_logits.shape, (32, NUM_ACTION_TYPES))
@@ -251,7 +251,7 @@ class TestDuelingPolicyNetwork(unittest.TestCase):
         self.assertEqual(output.value.shape, (32, 1))
 
     def test_sample_action(self):
-        x = torch.randn(32, 60)
+        x = torch.randn(32, 69)
         sample = self.policy.sample_action(x)
 
         self.assertEqual(sample.action_idx.shape, (32,))
