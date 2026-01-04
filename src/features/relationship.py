@@ -304,10 +304,19 @@ class RelationshipFeatures:
     # CC patterns
     cc_affinity_score: float = 0.0  # How often user is CC'd with sender (0-1)
 
+    # REL-006: Additional relationship metrics
+    reciprocity_score: float = 0.0  # Balance of two-way communication (0=one-way, 1=perfectly balanced)
+    relationship_momentum: float = 0.0  # Trend: >0 if relationship is growing, <0 if declining
+
+    @property
+    def days_since_last_interaction(self) -> Optional[float]:
+        """Alias for days_since_last_email for semantic clarity."""
+        return self.days_since_last_email
+
     def to_feature_vector(self) -> list[float]:
         """Convert to numerical vector for ML pipeline.
 
-        Returns 15-dimensional vector (with frequency, CC affinity, thread depth).
+        Returns 17-dimensional vector (with frequency, CC affinity, thread depth, reciprocity, momentum).
         """
         return [
             self.sender_response_deviation,
@@ -325,6 +334,8 @@ class RelationshipFeatures:
             self.communication_asymmetry,
             self.response_time_asymmetry,
             self.cc_affinity_score,
+            self.reciprocity_score,  # REL-006
+            (self.relationship_momentum + 1.0) / 2.0,  # REL-006: Normalize from [-1,1] to [0,1]
         ]
 
 
@@ -734,6 +745,95 @@ class CommunicationGraph:
         strength = (volume_score * 0.4 + reciprocity * 0.3 + response_engagement * 0.3)
         return min(1.0, strength)
 
+    def compute_reciprocity_score(self, sender: str, user: str) -> float:
+        """Compute reciprocity score measuring balance of two-way communication.
+
+        REL-006: This is a clean 0-1 score where:
+        - 0.0 = completely one-sided communication (only one party sends)
+        - 1.0 = perfectly balanced exchange (equal sends from both parties)
+
+        The score considers:
+        - Email volume balance between sender and user
+        - Response rate balance (both parties respond to each other)
+
+        Returns:
+            Reciprocity score from 0 to 1
+        """
+        key_from = (sender, user)  # sender -> user
+        key_to = (user, sender)    # user -> sender
+
+        stats_from = self.edges.get(key_from, CommunicationStats())
+        stats_to = self.edges.get(key_to, CommunicationStats())
+
+        # Volume reciprocity: how balanced is the email volume?
+        sender_to_user = stats_from.emails_sent
+        user_to_sender = stats_to.emails_sent
+        total_volume = sender_to_user + user_to_sender
+
+        if total_volume == 0:
+            return 0.0  # No communication at all
+
+        # Compute volume balance: 1 when equal, 0 when completely one-sided
+        volume_balance = min(sender_to_user, user_to_sender) / max(sender_to_user, user_to_sender) if max(sender_to_user, user_to_sender) > 0 else 0.0
+
+        # Response reciprocity: do both parties respond to each other?
+        # User's response rate to sender
+        user_response_rate = (stats_to.total_responses / stats_from.emails_sent) if stats_from.emails_sent > 0 else 0.0
+        # Sender's response rate to user
+        sender_response_rate = (stats_from.total_responses / stats_to.emails_sent) if stats_to.emails_sent > 0 else 0.0
+
+        # Balance of response rates
+        if user_response_rate + sender_response_rate > 0:
+            response_balance = 1.0 - abs(user_response_rate - sender_response_rate) / max(user_response_rate + sender_response_rate, 0.001)
+        else:
+            response_balance = 0.0
+
+        # Combined reciprocity score: weight volume balance higher as it's more fundamental
+        reciprocity = (volume_balance * 0.6 + response_balance * 0.4)
+        return min(1.0, max(0.0, reciprocity))
+
+    def compute_relationship_momentum(
+        self,
+        sender: str,
+        user: str,
+        emails_30d: int,
+        emails_90d: int,
+    ) -> float:
+        """Compute relationship momentum comparing recent vs historical activity.
+
+        REL-006: Measures whether the relationship is growing or declining.
+        Compares 30-day activity rate to 90-day average rate.
+
+        Returns:
+            Momentum from -1 to 1:
+            - Positive: relationship is growing (more recent activity)
+            - Zero: stable relationship
+            - Negative: relationship is declining (less recent activity)
+        """
+        # Emails in 30d represents recent activity
+        # Emails in 90d represents longer-term baseline (includes the 30d window)
+
+        # Calculate expected 30d emails based on 90d rate
+        # If 90d has X emails, we'd expect X/3 in any 30d period
+        if emails_90d == 0:
+            # No historical data - can't compute momentum
+            return 0.0
+
+        expected_30d = emails_90d / 3.0
+        actual_30d = float(emails_30d)
+
+        # Momentum = (actual - expected) / expected, normalized
+        if expected_30d > 0:
+            raw_momentum = (actual_30d - expected_30d) / expected_30d
+        else:
+            raw_momentum = 0.0
+
+        # Clamp to [-1, 1] range with some smoothing
+        # A 2x increase in activity = +1, a 50% decrease = -0.5, etc.
+        momentum = max(-1.0, min(1.0, raw_momentum))
+
+        return momentum
+
     def get_relationship_features(
         self,
         email: dict,
@@ -831,6 +931,10 @@ class CommunicationGraph:
         if combined_depths:
             avg_thread_depth = sum(combined_depths) / len(combined_depths)
 
+        # REL-006: Compute reciprocity and momentum
+        reciprocity = self.compute_reciprocity_score(sender, user)
+        momentum = self.compute_relationship_momentum(sender, user, emails_30d, emails_90d)
+
         return RelationshipFeatures(
             sender_response_deviation=deviation,
             sender_frequency_rank=self.get_sender_frequency_rank(sender, user),
@@ -847,6 +951,8 @@ class CommunicationGraph:
             communication_asymmetry=asymmetry,
             response_time_asymmetry=rt_asymmetry,
             cc_affinity_score=self.get_cc_affinity_score(sender, user),
+            reciprocity_score=reciprocity,  # REL-006
+            relationship_momentum=momentum,  # REL-006
         )
 
     def compute_priority_score(
