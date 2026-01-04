@@ -8,6 +8,7 @@ This package provides feature extraction for the email RL policy network:
 - temporal: Time-based features (hour, day, freshness, thread timing)
 - content: Semantic embeddings from email body text
 - relationship: Communication graph and relational priority model
+- service: Service domain classification (transactional, newsletter, etc.)
 - combined: Unified feature vector for policy network input
 """
 
@@ -82,6 +83,15 @@ from .combined import (
     FEATURE_DIMS,
 )
 
+from .service import (
+    ServiceType,
+    ServiceFeatures,
+    classify_service,
+    compute_service_score,
+    is_automated_sender,
+    get_service_type_description,
+)
+
 __all__ = [
     # Project features
     'ProjectFeatures',
@@ -136,4 +146,11 @@ __all__ = [
     'build_feature_matrix',
     'compute_overall_priority',
     'FEATURE_DIMS',
+    # Service features
+    'ServiceType',
+    'ServiceFeatures',
+    'classify_service',
+    'compute_service_score',
+    'is_automated_sender',
+    'get_service_type_description',
 ]
