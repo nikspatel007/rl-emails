@@ -291,7 +291,7 @@ class RelationshipFeatures:
     avg_response_time_to_sender: Optional[float] = None  # User's typical response time
 
     # Thread participation
-    avg_thread_depth: Optional[float]  # Average depth of threads with this sender
+    avg_thread_depth: Optional[float] = None  # Average depth of threads with this sender
 
     # Recency
     days_since_last_email: Optional[float] = None
@@ -596,6 +596,7 @@ class CommunicationGraph:
             # Add CC counts from tracking
             baseline.times_in_cc = self.user_cc_counts.get(user, 0)
 
+
         # Compute thread depths after baselines
         self.compute_thread_depths()
 
@@ -810,6 +811,7 @@ class CommunicationGraph:
             emails_7d = min(stats_from.emails_sent // 4, 50)  # Rough estimate
             emails_30d = min(stats_from.emails_sent, 100)
             emails_90d = stats_from.emails_sent
+
 
         # Compute avg_thread_depth from both directions
         # Combine thread depths from sender->user and user->sender exchanges
