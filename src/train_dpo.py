@@ -45,13 +45,16 @@ from features.combined import extract_combined_features, CombinedFeatureExtracto
 from policy_network import EmailPolicyNetwork, PolicyConfig
 
 
-# Action priority (higher = more preferred)
+# Action priority based on true user behavior distribution.
+# Higher values = more common actions in real user behavior.
+# This avoids artificial bias toward rare actions like REPLY_NOW.
+# Distribution from Gmail data: DELETE ~85%, REPLY ~14%, FORWARD <1%, ARCHIVE ~0%
 ACTION_PRIORITY = {
-    'DELETE': 0,
-    'ARCHIVE': 1,
-    'FORWARD': 2,
-    'REPLY_LATER': 3,
-    'REPLY_NOW': 4,
+    'DELETE': 4,      # Most common action (~85% of emails)
+    'ARCHIVE': 3,     # Filing away
+    'REPLY_LATER': 2, # Deferred response
+    'REPLY_NOW': 1,   # Urgent response
+    'FORWARD': 0,     # Least common action
 }
 
 ACTION_NAMES = ['reply_now', 'reply_later', 'forward', 'archive', 'delete']

@@ -6,7 +6,7 @@ email importance. The reward model is used in Stage 2 of the RL training
 pipeline, before GRPO/DPO fine-tuning.
 
 Training approach:
-- Generate preference pairs from user actions (REPLIED > DELETED, etc.)
+- Generate preference pairs from user actions (REPLY_NOW > DELETE, etc.)
 - Train using Bradley-Terry loss: L = -log(sigmoid(r_preferred - r_rejected))
 - Output scalar reward values for emails
 
@@ -31,30 +31,28 @@ except ImportError:
 
 
 class ActionPriority(IntEnum):
-    """Priority ranking of user actions for preference learning.
+    """Priority ranking based on true user behavior distribution.
 
-    Higher values indicate more valuable/engaged actions.
+    Higher values indicate more common actions in real user behavior.
+    This avoids artificial bias toward rare actions (like REPLY_NOW)
+    and instead reflects what users actually do with their emails.
+
+    Distribution from Gmail data: DELETE ~85%, REPLY ~14%, FORWARD <1%
     """
-    JUNK = 0
-    DELETED = 1
-    AUTO_FILED = 2
-    KEPT = 3
-    ARCHIVED = 4
-    COMPOSED = 5
-    FORWARDED = 6
-    REPLIED = 7
+    FORWARD = 0     # Least common action
+    REPLY_NOW = 1   # Urgent response (rare)
+    REPLY_LATER = 2 # Deferred response
+    ARCHIVE = 3     # User filed away
+    DELETE = 4      # Most common action (~85% of emails)
 
 
 # Map action strings to priority
 ACTION_TO_PRIORITY = {
-    'JUNK': ActionPriority.JUNK,
-    'DELETED': ActionPriority.DELETED,
-    'AUTO_FILED': ActionPriority.AUTO_FILED,
-    'KEPT': ActionPriority.KEPT,
-    'ARCHIVED': ActionPriority.ARCHIVED,
-    'COMPOSED': ActionPriority.COMPOSED,
-    'FORWARDED': ActionPriority.FORWARDED,
-    'REPLIED': ActionPriority.REPLIED,
+    'FORWARD': ActionPriority.FORWARD,
+    'REPLY_NOW': ActionPriority.REPLY_NOW,
+    'REPLY_LATER': ActionPriority.REPLY_LATER,
+    'ARCHIVE': ActionPriority.ARCHIVE,
+    'DELETE': ActionPriority.DELETE,
 }
 
 
@@ -250,7 +248,7 @@ class PreferencePairDataset(Dataset):
         n = len(self.actions)
 
         priorities = [
-            ACTION_TO_PRIORITY.get(action, ActionPriority.KEPT)
+            ACTION_TO_PRIORITY.get(action, ActionPriority.ARCHIVE)
             for action in self.actions
         ]
 
@@ -308,7 +306,7 @@ def generate_preference_pairs(
     n = len(actions)
 
     priorities = [
-        ACTION_TO_PRIORITY.get(action, ActionPriority.KEPT)
+        ACTION_TO_PRIORITY.get(action, ActionPriority.ARCHIVE)
         for action in actions
     ]
 
@@ -583,7 +581,7 @@ if __name__ == '__main__':
     # Test preference pair generation
     print("\nPreference pair generation:")
     features = torch.randn(100, 60)
-    actions = ['REPLIED'] * 20 + ['ARCHIVED'] * 30 + ['KEPT'] * 30 + ['DELETED'] * 20
+    actions = ['REPLY_NOW'] * 20 + ['REPLY_LATER'] * 20 + ['ARCHIVE'] * 30 + ['DELETE'] * 30
 
     pairs = generate_preference_pairs(features, actions, min_priority_gap=2, seed=42)
     print(f"  Generated {len(pairs)} preference pairs")

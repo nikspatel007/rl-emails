@@ -78,14 +78,34 @@ class EmailDataset(Dataset):
         )
 
 
-def compute_class_weights(dataset: EmailDataset) -> torch.Tensor:
-    """Compute inverse frequency class weights for balanced training."""
+def compute_class_weights(
+    dataset: EmailDataset,
+    weight_power: float = 0.3,
+) -> torch.Tensor:
+    """Compute class weights based on frequency distribution.
+
+    Uses a softened inverse frequency approach:
+        weight_i = (total / (n_classes * count_i)) ^ power
+
+    Args:
+        dataset: The email dataset
+        weight_power: Controls balance between uniform and inverse frequency.
+            - 0.0: Uniform weights (no class balancing, majority class dominates)
+            - 0.3: Soft balancing (default, respects true distribution)
+            - 0.5: Square root inverse frequency (moderate balancing)
+            - 1.0: Full inverse frequency (heavy bias to rare classes)
+
+    Returns:
+        Tensor of class weights
+    """
     counts = Counter(dataset.labels)
     total = len(dataset.labels)
     weights = []
     for i in range(len(ACTION_NAMES)):
         count = counts.get(i, 1)
-        weights.append(total / (len(ACTION_NAMES) * count))
+        # Softened inverse frequency
+        raw_weight = total / (len(ACTION_NAMES) * count)
+        weights.append(raw_weight ** weight_power)
     return torch.tensor(weights, dtype=torch.float32)
 
 
@@ -199,6 +219,8 @@ def main():
     parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate')
     parser.add_argument('--device', type=str, default='auto',
                        help='Device (auto, cpu, cuda, mps)')
+    parser.add_argument('--weight-power', type=float, default=0.3,
+                       help='Class weight power (0=uniform, 0.3=soft, 1.0=inverse freq)')
 
     args = parser.parse_args()
 
@@ -260,8 +282,8 @@ def main():
     print(f"\nModel: {sum(p.numel() for p in model.parameters())} parameters")
 
     # Compute class weights for imbalanced data
-    class_weights = compute_class_weights(train_dataset).to(device)
-    print(f"Class weights: {class_weights.tolist()}")
+    class_weights = compute_class_weights(train_dataset, args.weight_power).to(device)
+    print(f"Class weights (power={args.weight_power}): {class_weights.tolist()}")
 
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss(weight=class_weights)
