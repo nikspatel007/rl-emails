@@ -28,7 +28,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -53,15 +53,24 @@ except ImportError:
 
 # Action label mapping for 5-class action space
 ACTION_TO_IDX = {
-    'REPLIED': 0,      # reply_now
-    'COMPOSED': 0,     # treat as reply
+    # reply_now (0) - immediate replies
+    'REPLIED': 0,
+    'COMPOSED': 0,
     'REPLY': 0,
-    'FORWARDED': 2,    # forward
+    'REPLY_NOW': 0,
+    # reply_later (1) - deferred replies
+    'REPLY_LATER': 1,
+    # forward (2)
+    'FORWARDED': 2,
     'FORWARD': 2,
-    'ARCHIVED': 3,     # archive
+    # archive (3)
+    'ARCHIVED': 3,
+    'ARCHIVE': 3,
     'AUTO_FILED': 3,
     'KEPT': 3,
-    'DELETED': 4,      # delete
+    # delete (4)
+    'DELETED': 4,
+    'DELETE': 4,
     'JUNK': 4,
 }
 
@@ -91,6 +100,13 @@ class SFTConfig:
     # Regularization
     dropout: float = 0.1
     label_smoothing: float = 0.1
+
+    # Class imbalance handling
+    use_class_weights: bool = True          # Inverse frequency weighting
+    use_focal_loss: bool = False            # Focal loss for hard examples
+    focal_gamma: float = 2.0                # Focal loss gamma parameter
+    focal_alpha: Optional[list[float]] = None  # Per-class alpha weights
+    use_balanced_sampling: bool = False     # Oversample minority classes
 
     # Logging and checkpointing
     log_every: int = 10
@@ -153,6 +169,49 @@ class SFTDataset(Dataset):
             pct = counts[idx] / len(self.labels) * 100
             print(f"    {idx} ({IDX_TO_ACTION[idx]}): {counts[idx]} ({pct:.1f}%)")
 
+    def get_class_weights(self, num_classes: int = NUM_ACTION_TYPES) -> torch.Tensor:
+        """Compute inverse frequency class weights for balancing.
+
+        Returns:
+            Tensor of shape (num_classes,) with weights inversely proportional to class frequency
+        """
+        counts = torch.zeros(num_classes)
+        for label in self.labels:
+            counts[label] += 1
+
+        # Avoid division by zero - use max count for missing classes
+        # This effectively gives 0 weight to classes not in training data
+        total_samples = len(self.labels)
+
+        # Inverse frequency weighting
+        # For classes with 0 samples, use weight of 0 (can't train on them anyway)
+        weights = torch.zeros(num_classes)
+        for i in range(num_classes):
+            if counts[i] > 0:
+                # Standard inverse frequency: n_total / (n_classes * n_class_i)
+                weights[i] = total_samples / (num_classes * counts[i])
+            else:
+                # No samples for this class - weight doesn't matter
+                weights[i] = 0.0
+
+        # Normalize so average weight is 1.0 (preserves gradient scale)
+        non_zero_weights = weights[weights > 0]
+        if len(non_zero_weights) > 0:
+            weights = weights / non_zero_weights.mean()
+
+        print(f"  Class weights: {[f'{w:.2f}' for w in weights.tolist()]}")
+        return weights
+
+    def get_sample_weights(self) -> torch.Tensor:
+        """Compute per-sample weights for balanced sampling.
+
+        Returns:
+            Tensor of shape (num_samples,) with weight for each sample
+        """
+        class_weights = self.get_class_weights()
+        sample_weights = torch.tensor([class_weights[label].item() for label in self.labels])
+        return sample_weights
+
     def __len__(self) -> int:
         return len(self.features)
 
@@ -178,6 +237,95 @@ def collate_fn(batch: list) -> tuple[torch.Tensor, torch.Tensor]:
     return features, labels
 
 
+class FocalLoss(nn.Module):
+    """Focal Loss for addressing class imbalance.
+
+    Focal Loss = -alpha * (1 - p)^gamma * log(p)
+
+    Down-weights easy examples and focuses training on hard negatives.
+    Reference: Lin et al. "Focal Loss for Dense Object Detection" (2017)
+    """
+
+    def __init__(
+        self,
+        alpha: Optional[torch.Tensor] = None,
+        gamma: float = 2.0,
+        reduction: str = 'mean',
+        label_smoothing: float = 0.0,
+    ):
+        """Initialize Focal Loss.
+
+        Args:
+            alpha: Per-class weights (tensor of shape num_classes)
+            gamma: Focusing parameter (higher = more focus on hard examples)
+            reduction: 'mean', 'sum', or 'none'
+            label_smoothing: Label smoothing factor
+        """
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+        self.label_smoothing = label_smoothing
+
+    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Compute focal loss.
+
+        Args:
+            inputs: Logits of shape (N, C)
+            targets: Ground truth labels of shape (N,)
+
+        Returns:
+            Scalar loss if reduction is 'mean' or 'sum', else (N,) tensor
+        """
+        # Apply label smoothing if needed
+        num_classes = inputs.size(-1)
+        if self.label_smoothing > 0:
+            with torch.no_grad():
+                smooth_targets = torch.zeros_like(inputs)
+                smooth_targets.fill_(self.label_smoothing / (num_classes - 1))
+                smooth_targets.scatter_(1, targets.unsqueeze(1), 1 - self.label_smoothing)
+
+            log_probs = F.log_softmax(inputs, dim=-1)
+            probs = torch.exp(log_probs)
+
+            # Focal weight: (1 - p)^gamma
+            focal_weights = (1 - probs) ** self.gamma
+
+            # Apply alpha weights if provided
+            if self.alpha is not None:
+                alpha = self.alpha.to(inputs.device)
+                alpha_weights = alpha[targets].unsqueeze(1)
+                focal_weights = focal_weights * alpha_weights
+
+            loss = -focal_weights * smooth_targets * log_probs
+            loss = loss.sum(dim=-1)
+        else:
+            # Standard focal loss without label smoothing
+            log_probs = F.log_softmax(inputs, dim=-1)
+            probs = torch.exp(log_probs)
+
+            # Get probability of correct class
+            ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+            p_t = probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+
+            # Focal weight
+            focal_weight = (1 - p_t) ** self.gamma
+
+            # Apply alpha weights if provided
+            if self.alpha is not None:
+                alpha = self.alpha.to(inputs.device)
+                alpha_t = alpha.gather(0, targets)
+                focal_weight = focal_weight * alpha_t
+
+            loss = focal_weight * ce_loss
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
+
+
 class SFTTrainer:
     """Supervised Fine-Tuning trainer for email policy."""
 
@@ -185,23 +333,25 @@ class SFTTrainer:
         self,
         policy: EmailPolicyNetwork,
         config: Optional[SFTConfig] = None,
+        class_weights: Optional[torch.Tensor] = None,
     ):
         """Initialize trainer.
 
         Args:
             policy: Policy network to train
             config: Training configuration
+            class_weights: Optional pre-computed class weights
         """
         self.policy = policy
         self.config = config or SFTConfig()
+        self.class_weights = class_weights
 
         self.device = get_device(self.config.device)
         self.policy.to(self.device)
 
-        # Loss function with label smoothing
-        self.criterion = nn.CrossEntropyLoss(
-            label_smoothing=self.config.label_smoothing
-        )
+        # Loss function - will be set up when class weights are available
+        self.criterion = None
+        self._setup_criterion(class_weights)
 
         # Optimizer
         self.optimizer = torch.optim.AdamW(
@@ -215,6 +365,38 @@ class SFTTrainer:
 
         # Metrics tracking
         self.history = []
+
+    def _setup_criterion(self, class_weights: Optional[torch.Tensor] = None) -> None:
+        """Set up loss function based on config and class weights.
+
+        Args:
+            class_weights: Optional class weights for balancing
+        """
+        self.class_weights = class_weights
+
+        if self.config.use_focal_loss:
+            # Use Focal Loss
+            alpha = class_weights if self.config.use_class_weights else None
+            if self.config.focal_alpha is not None:
+                alpha = torch.tensor(self.config.focal_alpha)
+
+            self.criterion = FocalLoss(
+                alpha=alpha,
+                gamma=self.config.focal_gamma,
+                label_smoothing=self.config.label_smoothing,
+            )
+            print(f"Using Focal Loss (gamma={self.config.focal_gamma})")
+        else:
+            # Use CrossEntropyLoss with optional class weights
+            weight = None
+            if self.config.use_class_weights and class_weights is not None:
+                weight = class_weights.to(self.device)
+                print(f"Using CrossEntropyLoss with class weights")
+
+            self.criterion = nn.CrossEntropyLoss(
+                weight=weight,
+                label_smoothing=self.config.label_smoothing,
+            )
 
     def _adjust_learning_rate(self, epoch: int) -> float:
         """Adjust learning rate based on epoch."""
@@ -367,10 +549,29 @@ class SFTTrainer:
         epochs = num_epochs or self.config.epochs
         history = []
 
+        # Set up class weights if needed and not already set
+        if self.config.use_class_weights and self.class_weights is None:
+            class_weights = train_dataset.get_class_weights()
+            self._setup_criterion(class_weights)
+
+        # Set up sampler for balanced sampling
+        sampler = None
+        shuffle = True
+        if self.config.use_balanced_sampling:
+            sample_weights = train_dataset.get_sample_weights()
+            sampler = WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(train_dataset),
+                replacement=True,
+            )
+            shuffle = False  # Sampler handles shuffling
+            print("Using balanced sampling (WeightedRandomSampler)")
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.batch_size,
-            shuffle=True,
+            shuffle=shuffle,
+            sampler=sampler,
             collate_fn=collate_fn,
             num_workers=0,
         )
@@ -594,6 +795,29 @@ Examples:
         help='Device to use (default: auto)',
     )
 
+    # Class imbalance options
+    parser.add_argument(
+        '--no-class-weights',
+        action='store_true',
+        help='Disable class weighting (enabled by default)',
+    )
+    parser.add_argument(
+        '--focal-loss',
+        action='store_true',
+        help='Use focal loss instead of cross-entropy',
+    )
+    parser.add_argument(
+        '--focal-gamma',
+        type=float,
+        default=2.0,
+        help='Focal loss gamma parameter (default: 2.0)',
+    )
+    parser.add_argument(
+        '--balanced-sampling',
+        action='store_true',
+        help='Use balanced sampling (oversample minority classes)',
+    )
+
     args = parser.parse_args()
 
     # Load or create data
@@ -614,13 +838,18 @@ Examples:
     policy = create_policy_network()
     print(f"\nPolicy network: {sum(p.numel() for p in policy.parameters()):,} parameters")
 
-    # Configure trainer
+    # Configure trainer with class imbalance options
     config = SFTConfig(
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,
         device=args.device,
         checkpoint_dir=str(args.output.parent),
+        # Class imbalance handling
+        use_class_weights=not args.no_class_weights,
+        use_focal_loss=args.focal_loss,
+        focal_gamma=args.focal_gamma,
+        use_balanced_sampling=args.balanced_sampling,
     )
 
     # Create trainer and train

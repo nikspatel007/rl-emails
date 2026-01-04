@@ -27,7 +27,16 @@
 | Stage | Val Accuracy | Test Accuracy | Notes |
 |-------|--------------|---------------|-------|
 | Baseline | - | 1.59% | Random init, predicts reply_now |
-| SFT | 96.8% | 37.48% | Mode collapse → archive |
+| SFT (vanilla) | 96.8% | 37.48% | Mode collapse → archive |
+| SFT (class weights) | 48.6% | 53.14% | Balanced predictions, +15.7pp |
+
+#### Per-class F1 Scores (Class Weighted SFT)
+| Action | Precision | Recall | F1 |
+|--------|-----------|--------|-----|
+| reply_later | 0.609 | 0.653 | 0.630 |
+| forward | 0.204 | 0.696 | 0.316 |
+| archive | 0.727 | 0.347 | 0.469 |
+| delete | 0.596 | 0.611 | 0.603 |
 
 ### Artifacts (gitignored, local only)
 ```
@@ -46,14 +55,21 @@ checkpoints/
 └── sft_epoch_*.pt     # Per-epoch checkpoints
 ```
 
-### Issues Identified
-1. **Class imbalance**: archive dominates training (63%)
-2. **Distribution shift**: train vs test distributions differ significantly
-3. **Mode collapse**: model learns to predict majority class
-4. **No reply_now**: response-time matching failed
+### Issues Identified (Resolved)
+1. **Class imbalance**: archive dominates training (63%) -> Fixed with class weighting
+2. **Distribution shift**: train vs test distributions differ significantly -> Mitigated by class weights
+3. **Mode collapse**: model learns to predict majority class -> Fixed with inverse frequency weighting
+4. **Label mapping bug**: ACTION_TO_IDX was missing REPLY_LATER, ARCHIVE, DELETE -> Fixed
+5. **No reply_now**: response-time matching failed (data issue, not fixable)
+
+### Fixes Applied
+- [x] Add class weighting to SFT loss (inverse frequency weighting)
+- [x] Implement focal loss option (alternative to class weighting)
+- [x] Add balanced sampling option (WeightedRandomSampler)
+- [x] Fix ACTION_TO_IDX label mapping for training data
 
 ### Next Steps
-- [ ] Add class weighting to SFT loss
-- [ ] Try focal loss for hard examples
-- [ ] Run GRPO with reward shaping
-- [ ] Try Gmail data (better threading headers)
+- [ ] Run GRPO with reward shaping (Stage 3)
+- [ ] Try Gmail data (better threading headers for reply_now)
+- [ ] Experiment with focal loss + balanced sampling combination
+- [ ] Stage 4: DPO training
