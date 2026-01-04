@@ -15,6 +15,13 @@ Usage:
     python scripts/verify_raw_import.py /path/to/parsed_emails.jsonl
 
 Output: JSON gate result to stdout
+
+Known Issues (2026-01-04):
+    4 duplicate message_ids found (2 unique IDs appearing 3x each).
+    Accepted as known issue (0.01% of dataset):
+    - <0vkVzJ4VjBknZLvrNxqPAA@notifications.google.com>
+    - <cohesionIB/feature_requests/copilot_for_business@github.com>
+    These should be deduplicated during database import.
 """
 
 import json
