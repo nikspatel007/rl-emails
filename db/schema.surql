@@ -31,9 +31,18 @@ DEFINE TABLE threads SCHEMAFULL;
 DEFINE FIELD thread_id ON threads TYPE string;  -- Message-ID of first email or X-GM-THRID
 DEFINE FIELD subject ON threads TYPE string;
 DEFINE FIELD email_count ON threads TYPE int DEFAULT 0;
-DEFINE FIELD participants ON threads TYPE array<record<users>> DEFAULT [];
+DEFINE FIELD participants ON threads TYPE array<string> DEFAULT [];  -- email addresses
 DEFINE FIELD started_at ON threads TYPE option<datetime>;
 DEFINE FIELD last_activity ON threads TYPE option<datetime>;
+-- User-specific counts (relative to user_email)
+DEFINE FIELD your_email_count ON threads TYPE int DEFAULT 0;
+DEFINE FIELD your_reply_count ON threads TYPE int DEFAULT 0;
+-- Computed timing fields
+DEFINE FIELD thread_duration_seconds ON threads TYPE option<float>;
+DEFINE FIELD avg_response_time_seconds ON threads TYPE option<float>;
+-- Attachment fields
+DEFINE FIELD has_attachments ON threads TYPE bool DEFAULT false;
+DEFINE FIELD total_attachment_count ON threads TYPE int DEFAULT 0;
 DEFINE FIELD created_at ON threads TYPE datetime DEFAULT time::now();
 
 DEFINE INDEX threads_thread_id ON threads COLUMNS thread_id UNIQUE;
