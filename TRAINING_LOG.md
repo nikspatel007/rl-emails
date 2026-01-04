@@ -29,6 +29,7 @@
 | Baseline | - | 1.59% | Random init, predicts reply_now |
 | SFT (vanilla) | 96.8% | 37.48% | Mode collapse → archive |
 | SFT (class weights) | 48.6% | 53.14% | Balanced predictions, +15.7pp |
+| DPO (synthetic prefs) | 54.2% | 32.64% | Mode collapse → reply_later, FAILED |
 
 #### Per-class F1 Scores (Class Weighted SFT)
 | Action | Precision | Recall | F1 |
@@ -37,6 +38,38 @@
 | forward | 0.204 | 0.696 | 0.316 |
 | archive | 0.727 | 0.347 | 0.469 |
 | delete | 0.596 | 0.611 | 0.603 |
+
+#### Stage 4: DPO Analysis (FAILED)
+DPO with synthetic preference pairs did not work for this classification task.
+
+**Approach**: Generated preference pairs from action priority rankings:
+- Priority: reply_now > reply_later > forward > archive > delete
+- "Chosen" = higher priority action, "Rejected" = lower priority action
+- ~500K preference pairs generated from training data
+
+**Training metrics**:
+- Preference accuracy reached 100% by epoch 6
+- KL divergence: 0.002 (very low - model stayed close to reference)
+- Training appeared to converge successfully
+
+**Failure analysis**:
+1. **Optimization target mismatch**: DPO optimizes log-probability ratios between chosen/rejected,
+   not classification accuracy. High preference accuracy doesn't mean better classification.
+2. **Mode collapse**: Model learned to always predict reply_later (highest priority class
+   present in data). This maximizes preference accuracy but fails classification.
+3. **No ground truth signal**: Synthetic preferences lack the signal that SFT had (actual labels).
+
+**Key insight**: DPO is designed for aligning LLMs to human preferences, not for improving
+classification accuracy on supervised tasks. The approach was fundamentally misaligned.
+
+**Per-class Results (DPO)**:
+| Action | Precision | Recall | F1 |
+|--------|-----------|--------|-----|
+| reply_now | 0.000 | 0.000 | 0.000 |
+| reply_later | 0.326 | 1.000 | 0.492 |
+| forward | 0.000 | 0.000 | 0.000 |
+| archive | 0.000 | 0.000 | 0.000 |
+| delete | 0.000 | 0.000 | 0.000 |
 
 ### Artifacts (gitignored, local only)
 ```
@@ -52,7 +85,10 @@ data/
 checkpoints/
 ├── stage_1.pt         # SFT final checkpoint
 ├── best_sft.pt        # Best validation checkpoint
-└── sft_epoch_*.pt     # Per-epoch checkpoints
+├── sft_epoch_*.pt     # Per-epoch checkpoints
+├── stage_4.pt         # DPO final checkpoint (FAILED)
+├── best_dpo.pt        # Best DPO validation checkpoint
+└── dpo_epoch_*.pt     # DPO per-epoch checkpoints
 ```
 
 ### Issues Identified (Resolved)
@@ -69,7 +105,14 @@ checkpoints/
 - [x] Fix ACTION_TO_IDX label mapping for training data
 
 ### Next Steps
-- [ ] Run GRPO with reward shaping (Stage 3)
+- [ ] Run GRPO with reward shaping (Stage 3) - may face similar issues as DPO
 - [ ] Try Gmail data (better threading headers for reply_now)
 - [ ] Experiment with focal loss + balanced sampling combination
-- [ ] Stage 4: DPO training
+- [x] Stage 4: DPO training - **FAILED** (mode collapse, see analysis above)
+
+### Recommendations for Improving Accuracy
+1. **Better data**: Gmail/Outlook with proper threading headers for reply_now classification
+2. **Ensemble methods**: Combine multiple SFT models with different class weights
+3. **Two-stage classification**: First classify urgent vs non-urgent, then sub-classify
+4. **More sophisticated features**: Add email content embeddings (currently only metadata)
+5. **Human preference data**: Real human-labeled preferences instead of synthetic rankings

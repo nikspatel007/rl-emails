@@ -29,7 +29,7 @@ except ImportError:
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Import SFTConfig for checkpoint loading (if available)
+# Import config classes for checkpoint loading (if available)
 try:
     from sft_training import SFTConfig
 except ImportError:
@@ -48,6 +48,28 @@ except ImportError:
         log_every: int = 10
         save_every: int = 1
         checkpoint_dir: str = "checkpoints"
+
+try:
+    from dpo_training import DPOConfig
+except ImportError:
+    # Define minimal DPOConfig for unpickling checkpoints
+    @dataclass
+    class DPOConfig:
+        beta: float = 0.1
+        reference_free: bool = False
+        learning_rate: float = 5e-5
+        weight_decay: float = 0.01
+        batch_size: int = 32
+        epochs: int = 5
+        min_priority_gap: int = 1
+        max_pairs_per_email: int = 5
+        use_margin_weighting: bool = True
+        margin_scale: float = 0.5
+        sft_weight: float = 0.0
+        log_every: int = 10
+        save_every: int = 1
+        checkpoint_dir: str = "checkpoints"
+        val_split: float = 0.1
 
 from features.combined import extract_combined_features, CombinedFeatureExtractor
 from policy_network import EmailPolicyNetwork, PolicyConfig, create_policy_network
