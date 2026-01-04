@@ -45,8 +45,12 @@ from .people import (
 
 from .temporal import (
     TemporalFeatures,
+    RelationshipDecayFeatures,
     extract_temporal_features,
     compute_temporal_score,
+    compute_relationship_decay,
+    compute_sender_decay_score,
+    DEFAULT_DECAY_HALF_LIFE_DAYS,
 )
 
 from .service import (
@@ -126,6 +130,7 @@ __all__ = [
     'compute_people_score',
     # Temporal features
     'TemporalFeatures',
+    'RelationshipDecayFeatures',
     'extract_temporal_features',
     'compute_temporal_score',
     # Service features
@@ -134,6 +139,10 @@ __all__ = [
     'compute_service_score',
     'detect_list_unsubscribe_header',
     'detect_unsubscribe_links',
+    # Relationship decay features
+    'compute_relationship_decay',
+    'compute_sender_decay_score',
+    'DEFAULT_DECAY_HALF_LIFE_DAYS',
     # Content features
     'ContentFeatures',
     'ContentFeatureExtractor',

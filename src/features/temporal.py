@@ -6,9 +6,15 @@ Extracts time-based features that capture:
 - Time since email was received
 - Business hours / weekend detection
 - Thread timing patterns
+- Relationship decay over time
 
 User email behavior varies significantly by time - people respond faster
 during business hours, may defer weekend emails, etc.
+
+Relationship decay model:
+- Relationships decay without contact (half-life ~30 days)
+- Formula: relationship_strength * decay_factor^days_since_contact
+- recent_emails provide a baseline that decays over time
 """
 
 import math
@@ -29,6 +35,12 @@ except ImportError:
 DEFAULT_BUSINESS_START = 9   # 9 AM
 DEFAULT_BUSINESS_END = 18    # 6 PM
 DEFAULT_BUSINESS_DAYS = {0, 1, 2, 3, 4}  # Monday-Friday
+
+# Relationship decay configuration
+DEFAULT_DECAY_HALF_LIFE_DAYS = 30.0  # Relationships decay by half every 30 days
+# decay_factor = 0.5^(1/half_life) for daily decay
+# Or use exponential: exp(-ln(2) * days / half_life)
+DECAY_LAMBDA = math.log(2) / DEFAULT_DECAY_HALF_LIFE_DAYS  # ~0.0231
 
 
 @dataclass
@@ -81,6 +93,52 @@ class TemporalFeatures:
             # Thread timing - normalized (1)
             # Cap at 7 days, normalize to 0-1
             min(self.time_since_last_in_thread_hours, 168.0) / 168.0,
+        ]
+        if HAS_NUMPY:
+            return np.array(values, dtype=np.float32)
+        return values
+
+
+@dataclass
+class RelationshipDecayFeatures:
+    """Features modeling relationship strength decay over time.
+
+    Key formula: decayed_strength = recent_emails * decay_factor^days
+    With half-life of 30 days, relationships lose half their "freshness"
+    each month without contact.
+    """
+    # Input values
+    days_since_last_contact: float  # Days since last email from sender
+    recent_email_count: int  # Emails in the observation window (e.g., 90 days)
+    half_life_days: float  # Decay half-life (default 30)
+
+    # Computed decay values
+    decay_factor: float  # exp(-lambda * days), range 0-1
+    decayed_strength: float  # recent_emails * decay_factor
+    relationship_freshness: float  # Normalized 0-1 score
+
+    # Derived signals
+    is_dormant: bool  # No contact > 2x half-life (60+ days default)
+    is_active: bool  # Contact within half-life (30 days default)
+    urgency_boost: float  # Boost for re-engaging dormant relationships
+
+    def to_feature_vector(self) -> Union["np.ndarray", list[float]]:
+        """Convert to numpy array for ML pipeline.
+
+        Returns 6-dimensional vector.
+        """
+        values = [
+            # Core decay features (3)
+            self.decay_factor,
+            min(self.decayed_strength, 10.0) / 10.0,  # Normalized
+            self.relationship_freshness,
+
+            # Binary signals (2)
+            1.0 if self.is_dormant else 0.0,
+            1.0 if self.is_active else 0.0,
+
+            # Urgency (1)
+            self.urgency_boost,
         ]
         if HAS_NUMPY:
             return np.array(values, dtype=np.float32)
@@ -194,6 +252,128 @@ def _is_business_hours(
     is_weekday = day in business_days
     is_working_hour = start_hour <= hour < end_hour
     return is_weekday and is_working_hour
+
+
+def compute_relationship_decay(
+    days_since_last_contact: float,
+    recent_email_count: int,
+    half_life_days: float = DEFAULT_DECAY_HALF_LIFE_DAYS,
+) -> RelationshipDecayFeatures:
+    """Compute relationship decay features based on time since last contact.
+
+    Models relationship strength decay using exponential decay with configurable
+    half-life. Default half-life is 30 days, meaning relationships lose half
+    their "freshness" each month without contact.
+
+    Formula: decayed_strength = recent_emails * exp(-lambda * days)
+    where lambda = ln(2) / half_life
+
+    Args:
+        days_since_last_contact: Days since last email from this sender
+        recent_email_count: Number of emails from sender in observation window
+        half_life_days: Decay half-life in days (default: 30)
+
+    Returns:
+        RelationshipDecayFeatures with computed decay values
+
+    Example:
+        >>> features = compute_relationship_decay(days_since=45, recent_emails=10)
+        >>> features.decay_factor  # ~0.35 (more than half-life elapsed)
+        >>> features.decayed_strength  # 10 * 0.35 = 3.5
+    """
+    # Ensure non-negative days
+    days = max(0.0, days_since_last_contact)
+
+    # Compute decay factor using exponential decay
+    # decay_factor = exp(-lambda * days) where lambda = ln(2) / half_life
+    decay_lambda = math.log(2) / half_life_days
+    decay_factor = math.exp(-decay_lambda * days)
+
+    # Compute decayed strength
+    decayed_strength = recent_email_count * decay_factor
+
+    # Normalize to 0-1 relationship freshness
+    # Use sigmoid-like transform: fresh within half-life, stale beyond 2x
+    # freshness = 1 / (1 + exp((days - half_life) / (half_life / 3)))
+    freshness_midpoint = half_life_days
+    freshness_slope = half_life_days / 3.0
+    relationship_freshness = 1.0 / (1.0 + math.exp((days - freshness_midpoint) / freshness_slope))
+
+    # Binary signals for relationship state
+    is_dormant = days > (2 * half_life_days)  # No contact > 60 days (default)
+    is_active = days <= half_life_days  # Contact within 30 days (default)
+
+    # Urgency boost for re-engaging dormant relationships
+    # High-volume senders who've gone dormant deserve attention
+    if is_dormant and recent_email_count >= 5:
+        # Boost proportional to historical volume, capped at 0.5
+        urgency_boost = min(0.5, recent_email_count / 20.0)
+    elif is_active and recent_email_count >= 10:
+        # Active high-volume sender - slight boost
+        urgency_boost = min(0.3, recent_email_count / 50.0)
+    else:
+        urgency_boost = 0.0
+
+    return RelationshipDecayFeatures(
+        days_since_last_contact=days,
+        recent_email_count=recent_email_count,
+        half_life_days=half_life_days,
+        decay_factor=decay_factor,
+        decayed_strength=decayed_strength,
+        relationship_freshness=relationship_freshness,
+        is_dormant=is_dormant,
+        is_active=is_active,
+        urgency_boost=urgency_boost,
+    )
+
+
+def compute_sender_decay_score(
+    days_since_last_contact: float,
+    emails_7d: int = 0,
+    emails_30d: int = 0,
+    emails_90d: int = 0,
+    half_life_days: float = DEFAULT_DECAY_HALF_LIFE_DAYS,
+) -> float:
+    """Compute a single decay-weighted score for a sender relationship.
+
+    Combines time-windowed email counts with decay to produce a 0-1 score.
+    This is the primary interface for the ML pipeline.
+
+    Args:
+        days_since_last_contact: Days since last email from sender
+        emails_7d: Emails from sender in last 7 days
+        emails_30d: Emails from sender in last 30 days
+        emails_90d: Emails from sender in last 90 days
+        half_life_days: Decay half-life (default 30)
+
+    Returns:
+        Score from 0 to 1 where higher = stronger/fresher relationship
+    """
+    # Weighted combination of time windows
+    # Recent emails count more
+    weighted_count = (
+        emails_7d * 3.0 +  # 7-day emails weighted 3x
+        emails_30d * 1.0 +  # 30-day emails weighted 1x
+        emails_90d * 0.3    # 90-day emails weighted 0.3x
+    )
+
+    # Get decay features
+    features = compute_relationship_decay(
+        days_since_last_contact=days_since_last_contact,
+        recent_email_count=int(weighted_count),
+        half_life_days=half_life_days,
+    )
+
+    # Combine decay factor with freshness for final score
+    # decay_factor handles the pure time decay
+    # relationship_freshness handles the sigmoid normalization
+    raw_score = (
+        features.decay_factor * 0.4 +
+        features.relationship_freshness * 0.4 +
+        min(weighted_count / 30.0, 1.0) * 0.2  # Volume component
+    )
+
+    return min(1.0, max(0.0, raw_score))
 
 
 def extract_temporal_features(
@@ -403,6 +583,59 @@ if __name__ == '__main__':
         print(f"  Thread gap: {features.time_since_last_in_thread_hours:.1f}h")
         print(f"  Urgency score: {features.temporal_urgency:.3f}")
         print(f"  Vector dims: {len(features.to_feature_vector())}")
+
+    # Test relationship decay modeling
+    print("\n" + "=" * 60)
+    print("RELATIONSHIP DECAY MODELING TEST")
+    print("=" * 60)
+
+    decay_test_cases = [
+        {'name': 'Active relationship (0 days)', 'days': 0, 'emails': 20},
+        {'name': 'Recent contact (7 days)', 'days': 7, 'emails': 15},
+        {'name': 'At half-life (30 days)', 'days': 30, 'emails': 10},
+        {'name': 'Stale relationship (60 days)', 'days': 60, 'emails': 10},
+        {'name': 'Dormant high-volume (90 days)', 'days': 90, 'emails': 25},
+        {'name': 'New contact (7 days, low vol)', 'days': 7, 'emails': 2},
+    ]
+
+    print(f"\nUsing half-life of {DEFAULT_DECAY_HALF_LIFE_DAYS} days")
+    print("-" * 60)
+
+    for case in decay_test_cases:
+        features = compute_relationship_decay(
+            days_since_last_contact=case['days'],
+            recent_email_count=case['emails'],
+        )
+        print(f"\n{case['name']}:")
+        print(f"  Days since contact: {features.days_since_last_contact}")
+        print(f"  Recent emails: {features.recent_email_count}")
+        print(f"  Decay factor: {features.decay_factor:.3f}")
+        print(f"  Decayed strength: {features.decayed_strength:.2f}")
+        print(f"  Freshness: {features.relationship_freshness:.3f}")
+        print(f"  Active: {features.is_active}, Dormant: {features.is_dormant}")
+        print(f"  Urgency boost: {features.urgency_boost:.3f}")
+        print(f"  Vector dims: {len(features.to_feature_vector())}")
+
+    # Test sender decay score
+    print("\n" + "-" * 60)
+    print("SENDER DECAY SCORE (combined metric)")
+    print("-" * 60)
+
+    score_test_cases = [
+        {'name': 'Very active sender', 'days': 1, 'e7': 5, 'e30': 15, 'e90': 30},
+        {'name': 'Moderate sender', 'days': 10, 'e7': 1, 'e30': 5, 'e90': 10},
+        {'name': 'Infrequent sender', 'days': 45, 'e7': 0, 'e30': 1, 'e90': 3},
+        {'name': 'Gone cold', 'days': 90, 'e7': 0, 'e30': 0, 'e90': 5},
+    ]
+
+    for case in score_test_cases:
+        score = compute_sender_decay_score(
+            days_since_last_contact=case['days'],
+            emails_7d=case['e7'],
+            emails_30d=case['e30'],
+            emails_90d=case['e90'],
+        )
+        print(f"  {case['name']}: score={score:.3f}")
 
     print("\n" + "=" * 60)
     print("All tests complete!")
