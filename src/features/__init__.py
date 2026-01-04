@@ -112,6 +112,14 @@ from .service import (
     get_service_type_description,
 )
 
+from .timeline import (
+    TimelineReconstructor,
+    RelationshipSnapshot,
+    TopicSnapshot,
+    get_relationship_at,
+    get_topic_state_at,
+)
+
 __all__ = [
     # Project features
     'ProjectFeatures',
@@ -190,4 +198,10 @@ __all__ = [
     'compute_service_score',
     'is_automated_sender',
     'get_service_type_description',
+    # Timeline reconstruction
+    'TimelineReconstructor',
+    'RelationshipSnapshot',
+    'TopicSnapshot',
+    'get_relationship_at',
+    'get_topic_state_at',
 ]
