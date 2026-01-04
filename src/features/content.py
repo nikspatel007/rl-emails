@@ -47,6 +47,21 @@ MODEL_EMBEDDING_DIMS = {
     'paraphrase-mpnet-base-v2': 768,
 }
 
+# Large model: all-mpnet-base-v2
+# - 768-dim embeddings
+# - Slower inference but better semantic quality
+# - Recommended for ensemble's large_embed variant
+LARGE_MODEL = 'all-mpnet-base-v2'
+LARGE_EMBEDDING_DIM = 768
+
+# Model name to embedding dimension mapping
+MODEL_EMBEDDING_DIMS = {
+    'all-MiniLM-L6-v2': 384,
+    'all-mpnet-base-v2': 768,
+    'paraphrase-MiniLM-L6-v2': 384,
+    'paraphrase-mpnet-base-v2': 768,
+}
+
 # Maximum text length to process (chars)
 MAX_SUBJECT_LEN = 256
 MAX_BODY_LEN = 2048
