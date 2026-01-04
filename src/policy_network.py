@@ -10,7 +10,7 @@ decisions. The network uses an Actor-Critic architecture with:
 - Value head (for advantage estimation)
 
 Compatible with:
-- CombinedFeatures (60-dim input from features/combined.py)
+- CombinedFeatures (69-dim input from features/combined.py)
 - EmailState (variable dim with embeddings from email_state.py)
 - EmailAction (output format from email_action.py)
 """
@@ -27,7 +27,7 @@ from torch.distributions import Categorical
 # Constants matching email_action.py
 NUM_ACTION_TYPES = 5  # reply_now, reply_later, forward, archive, delete
 NUM_RESPONSE_TIMES = 5  # immediate, same_day, next_day, this_week, when_possible
-DEFAULT_FEATURE_DIM = 60  # From CombinedFeatures
+DEFAULT_FEATURE_DIM = 69  # From CombinedFeatures (project:8 + topic:20 + task:12 + people:15 + temporal:8 + scores:6)
 
 
 class PolicyOutput(NamedTuple):
@@ -196,9 +196,9 @@ class EmailPolicyNetwork(nn.Module):
     - Value estimate (expected return from this state)
 
     Example usage:
-        >>> config = PolicyConfig(input_dim=60)
+        >>> config = PolicyConfig(input_dim=69)
         >>> policy = EmailPolicyNetwork(config)
-        >>> features = torch.randn(32, 60)  # batch of 32 emails
+        >>> features = torch.randn(32, 69)  # batch of 32 emails
         >>> output = policy(features)
         >>> print(output.action_logits.shape)  # (32, 5)
 
@@ -462,7 +462,7 @@ if __name__ == '__main__':
     print("=" * 60)
 
     # Create network
-    config = PolicyConfig(input_dim=60, hidden_dims=(256, 128, 64))
+    config = PolicyConfig(input_dim=69, hidden_dims=(256, 128, 64))
     policy = EmailPolicyNetwork(config)
 
     print(f"\nNetwork architecture:")
@@ -472,7 +472,7 @@ if __name__ == '__main__':
 
     # Test forward pass
     batch_size = 32
-    x = torch.randn(batch_size, 60)
+    x = torch.randn(batch_size, 69)
 
     print(f"\nForward pass (batch_size={batch_size}):")
     output = policy(x)
@@ -502,7 +502,7 @@ if __name__ == '__main__':
 
     # Test greedy prediction
     print("\nGreedy prediction (single sample):")
-    single_x = torch.randn(1, 60)
+    single_x = torch.randn(1, 69)
     action_idx, timing_idx, priority = policy.predict_greedy(single_x)
     print(f"  Action: {action_idx}")
     print(f"  Timing: {timing_idx}")

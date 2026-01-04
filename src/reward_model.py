@@ -11,7 +11,7 @@ Training approach:
 - Output scalar reward values for emails
 
 Compatible with:
-- CombinedFeatures (60-dim input from features/combined.py)
+- CombinedFeatures (69-dim input from features/combined.py)
 - EmailPolicyNetwork (shares encoder architecture)
 """
 
@@ -82,15 +82,15 @@ class EmailRewardModel(nn.Module):
     derived from user actions.
 
     Example usage:
-        >>> config = RewardConfig(input_dim=60)
+        >>> config = RewardConfig(input_dim=69)
         >>> reward_model = EmailRewardModel(config)
-        >>> features = torch.randn(32, 60)  # batch of 32 emails
+        >>> features = torch.randn(32, 69)  # batch of 32 emails
         >>> rewards = reward_model(features)
         >>> print(rewards.shape)  # (32, 1)
 
         # Compute preference loss
-        >>> preferred = torch.randn(16, 60)
-        >>> rejected = torch.randn(16, 60)
+        >>> preferred = torch.randn(16, 69)
+        >>> rejected = torch.randn(16, 69)
         >>> loss = reward_model.preference_loss(preferred, rejected)
     """
 
@@ -551,7 +551,7 @@ if __name__ == '__main__':
     print("=" * 60)
 
     # Create model
-    config = RewardConfig(input_dim=60, hidden_dims=(256, 128, 64))
+    config = RewardConfig(input_dim=69, hidden_dims=(256, 128, 64))
     reward_model = EmailRewardModel(config)
 
     print(f"\nNetwork architecture:")
@@ -561,7 +561,7 @@ if __name__ == '__main__':
 
     # Test forward pass
     batch_size = 32
-    x = torch.randn(batch_size, 60)
+    x = torch.randn(batch_size, 69)
 
     print(f"\nForward pass (batch_size={batch_size}):")
     rewards = reward_model(x)
@@ -570,8 +570,8 @@ if __name__ == '__main__':
 
     # Test preference loss
     print("\nPreference loss:")
-    preferred = torch.randn(16, 60)
-    rejected = torch.randn(16, 60)
+    preferred = torch.randn(16, 69)
+    rejected = torch.randn(16, 69)
     loss = reward_model.preference_loss(preferred, rejected)
     print(f"  Loss: {loss.item():.4f}")
 
@@ -580,7 +580,7 @@ if __name__ == '__main__':
 
     # Test preference pair generation
     print("\nPreference pair generation:")
-    features = torch.randn(100, 60)
+    features = torch.randn(100, 69)  # 60 base + 9 temporal features
     actions = ['REPLY_NOW'] * 20 + ['REPLY_LATER'] * 20 + ['ARCHIVE'] * 30 + ['DELETE'] * 30
 
     pairs = generate_preference_pairs(features, actions, min_priority_gap=2, seed=42)

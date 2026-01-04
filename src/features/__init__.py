@@ -5,6 +5,7 @@ This package provides feature extraction for the email RL policy network:
 - topic: Topic classification and content type detection
 - task: Task extraction and deadline urgency
 - people: Sender importance and relationship scoring
+- temporal: Time-based features (hour, day, freshness, thread timing)
 - combined: Unified feature vector for policy network input
 """
 
@@ -37,6 +38,12 @@ from .people import (
     PeopleFeatures,
     extract_people_features,
     compute_people_score,
+)
+
+from .temporal import (
+    TemporalFeatures,
+    extract_temporal_features,
+    compute_temporal_score,
 )
 
 from .combined import (
@@ -73,6 +80,10 @@ __all__ = [
     'PeopleFeatures',
     'extract_people_features',
     'compute_people_score',
+    # Temporal features
+    'TemporalFeatures',
+    'extract_temporal_features',
+    'compute_temporal_score',
     # Combined features
     'CombinedFeatures',
     'CombinedFeatureExtractor',

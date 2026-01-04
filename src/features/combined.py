@@ -6,6 +6,7 @@ suitable for the policy network input.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, Union
 
 try:
@@ -19,6 +20,7 @@ from .project import ProjectFeatures, extract_project_features
 from .topic import TopicFeatures, classify_topic, compute_topic_score
 from .task import TaskFeatures, extract_tasks, compute_task_score
 from .people import PeopleFeatures, extract_people_features, compute_people_score
+from .temporal import TemporalFeatures, extract_temporal_features, compute_temporal_score
 
 
 @dataclass
@@ -29,12 +31,14 @@ class CombinedFeatures:
     topic: TopicFeatures
     task: TaskFeatures
     people: PeopleFeatures
+    temporal: TemporalFeatures
 
     # Computed scores
     project_score: float
     topic_score: float
     task_score: float
     people_score: float
+    temporal_score: float
     overall_priority: float
 
     def to_feature_vector(self) -> Union["np.ndarray", list[float]]:
@@ -47,14 +51,16 @@ class CombinedFeatures:
         - Topic features: 20 dims
         - Task features: 12 dims
         - People features: 15 dims
-        - Computed scores: 5 dims (project, topic, task, people, overall)
-        - Total: 60 dims
+        - Temporal features: 8 dims
+        - Computed scores: 6 dims (project, topic, task, people, temporal, overall)
+        - Total: 69 dims
         """
         # Get individual vectors
         project_vec = self.project.to_feature_vector()
         topic_vec = self.topic.to_feature_vector()
         task_vec = self.task.to_feature_vector()
         people_vec = self.people.to_feature_vector()
+        temporal_vec = self.temporal.to_feature_vector()
 
         # Computed scores
         scores = [
@@ -62,6 +68,7 @@ class CombinedFeatures:
             self.topic_score,
             self.task_score,
             self.people_score,
+            self.temporal_score,
             self.overall_priority,
         ]
 
@@ -71,12 +78,13 @@ class CombinedFeatures:
                 np.asarray(topic_vec),
                 np.asarray(task_vec),
                 np.asarray(people_vec),
+                np.asarray(temporal_vec),
                 np.array(scores, dtype=np.float32),
             ])
         else:
             # List concatenation
             combined = []
-            for vec in [project_vec, topic_vec, task_vec, people_vec]:
+            for vec in [project_vec, topic_vec, task_vec, people_vec, temporal_vec]:
                 if isinstance(vec, list):
                     combined.extend(vec)
                 else:
@@ -92,6 +100,7 @@ class CombinedFeatures:
                 'topic': self.topic_score,
                 'task': self.task_score,
                 'people': self.people_score,
+                'temporal': self.temporal_score,
                 'overall_priority': self.overall_priority,
             },
             'project': {
@@ -121,6 +130,14 @@ class CombinedFeatures:
                 'includes_executives': self.people.includes_executives,
                 'sender_importance': self.people.sender_importance,
             },
+            'temporal': {
+                'hour_of_day': self.temporal.hour_of_day,
+                'day_of_week': self.temporal.day_of_week,
+                'time_since_receipt_hours': self.temporal.time_since_receipt_hours,
+                'is_business_hours': self.temporal.is_business_hours,
+                'is_weekend': self.temporal.is_weekend,
+                'urgency': self.temporal.temporal_urgency,
+            },
             'vector_dims': len(self.to_feature_vector()),
         }
 
@@ -130,6 +147,7 @@ def compute_overall_priority(
     topic_score: float,
     task_score: float,
     people_score: float,
+    temporal_score: float = 0.5,
     *,
     weights: Optional[dict[str, float]] = None,
 ) -> float:
@@ -140,6 +158,7 @@ def compute_overall_priority(
         topic_score: Score from topic classification
         task_score: Score from task extraction
         people_score: Score from people analysis
+        temporal_score: Score from temporal features (default 0.5 for backward compat)
         weights: Optional custom weights (must sum to 1.0)
 
     Returns:
@@ -147,17 +166,19 @@ def compute_overall_priority(
     """
     if weights is None:
         weights = {
-            'people': 0.30,
-            'project': 0.25,
-            'topic': 0.25,
+            'people': 0.25,
+            'project': 0.20,
+            'topic': 0.20,
             'task': 0.20,
+            'temporal': 0.15,
         }
 
     priority = (
-        weights.get('people', 0.30) * people_score +
-        weights.get('project', 0.25) * project_score +
-        weights.get('topic', 0.25) * topic_score +
-        weights.get('task', 0.20) * task_score
+        weights.get('people', 0.25) * people_score +
+        weights.get('project', 0.20) * project_score +
+        weights.get('topic', 0.20) * topic_score +
+        weights.get('task', 0.20) * task_score +
+        weights.get('temporal', 0.15) * temporal_score
     )
 
     return min(1.0, max(0.0, priority))
@@ -168,14 +189,18 @@ def extract_combined_features(
     *,
     user_email: str = '',
     user_context: Optional[dict] = None,
+    thread_context: Optional[dict] = None,
+    reference_time: Optional["datetime"] = None,
     weights: Optional[dict[str, float]] = None,
 ) -> CombinedFeatures:
     """Extract all features from an email and combine into unified representation.
 
     Args:
-        email: Email dictionary with subject, body, from, to, cc, x_from, x_to fields
+        email: Email dictionary with subject, body, from, to, cc, x_from, x_to, date fields
         user_email: The user's email address for context
         user_context: Optional dict with historical interaction data
+        thread_context: Optional dict with thread timing info (for temporal features)
+        reference_time: Time to compute temporal features from (default: now)
         weights: Optional custom priority weights
 
     Returns:
@@ -193,6 +218,11 @@ def extract_combined_features(
         user_email=user_email,
         user_context=user_context,
     )
+    temporal_features = extract_temporal_features(
+        email,
+        reference_time=reference_time,
+        thread_context=thread_context,
+    )
 
     # Compute scores
     # Project score uses the project_features internal score
@@ -200,6 +230,7 @@ def extract_combined_features(
     topic_score = compute_topic_score(topic_features)
     task_score = compute_task_score(task_features)
     people_score = compute_people_score(people_features)
+    temporal_score = compute_temporal_score(temporal_features)
 
     # Compute overall priority
     overall_priority = compute_overall_priority(
@@ -207,6 +238,7 @@ def extract_combined_features(
         topic_score,
         task_score,
         people_score,
+        temporal_score,
         weights=weights,
     )
 
@@ -215,10 +247,12 @@ def extract_combined_features(
         topic=topic_features,
         task=task_features,
         people=people_features,
+        temporal=temporal_features,
         project_score=project_score,
         topic_score=topic_score,
         task_score=task_score,
         people_score=people_score,
+        temporal_score=temporal_score,
         overall_priority=overall_priority,
     )
 
@@ -330,8 +364,8 @@ class CombinedFeatureExtractor:
     @property
     def feature_dim(self) -> int:
         """Return dimensionality of feature vector."""
-        # 8 + 20 + 12 + 15 + 5 = 60
-        return 60
+        # 8 + 20 + 12 + 15 + 8 + 6 = 69
+        return 69
 
 
 # Feature dimension constants for external reference
@@ -340,8 +374,9 @@ FEATURE_DIMS = {
     'topic': 20,
     'task': 12,
     'people': 15,
-    'scores': 5,
-    'total': 60,
+    'temporal': 8,
+    'scores': 6,
+    'total': 69,
 }
 
 
@@ -398,6 +433,7 @@ if __name__ == '__main__':
     print(f"  Topic:    {features.topic_score:.2f}")
     print(f"  Task:     {features.task_score:.2f}")
     print(f"  People:   {features.people_score:.2f}")
+    print(f"  Temporal: {features.temporal_score:.2f}")
     print(f"  Overall:  {features.overall_priority:.2f}")
     print()
     print("PROJECT FEATURES:")
@@ -424,6 +460,14 @@ if __name__ == '__main__':
     print(f"  Org level: {features.people.sender_org_level}")
     print(f"  Direct to: {features.people.is_direct_to}")
     print(f"  Importance: {features.people.sender_importance:.2f}")
+    print()
+    print("TEMPORAL FEATURES:")
+    print(f"  Hour of day: {features.temporal.hour_of_day}")
+    print(f"  Day of week: {features.temporal.day_of_week}")
+    print(f"  Business hours: {features.temporal.is_business_hours}")
+    print(f"  Weekend: {features.temporal.is_weekend}")
+    print(f"  Time since receipt: {features.temporal.time_since_receipt_hours:.1f}h")
+    print(f"  Urgency: {features.temporal.temporal_urgency:.2f}")
     print()
     print("FEATURE VECTOR:")
     vec = features.to_feature_vector()
