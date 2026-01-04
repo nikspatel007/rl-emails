@@ -1,0 +1,81 @@
+{
+  "action_accuracy": 0.7604456824512534,
+  "timing_accuracy": 0.0,
+  "action_precision": {
+    "reply_now": 0.3023255813953488,
+    "reply_later": 0.5,
+    "forward": 0.07142857142857142,
+    "archive": 0.0,
+    "delete": 1.0
+  },
+  "action_recall": {
+    "reply_now": 1.0,
+    "reply_later": 0.07407407407407407,
+    "forward": 0.5,
+    "archive": 0.0,
+    "delete": 0.8026315789473685
+  },
+  "action_f1": {
+    "reply_now": 0.46428571428571425,
+    "reply_later": 0.12903225806451613,
+    "forward": 0.125,
+    "archive": 0.0,
+    "delete": 0.8905109489051095
+  },
+  "priority_mae": 0.29629370490488566,
+  "priority_correlation": 0.32354875689246454,
+  "total_samples": 359,
+  "action_distribution_true": {
+    "delete": 304,
+    "reply_later": 27,
+    "reply_now": 26,
+    "forward": 2
+  },
+  "action_distribution_pred": {
+    "reply_now": 86,
+    "delete": 244,
+    "forward": 14,
+    "archive": 11,
+    "reply_later": 4
+  },
+  "confusion_matrix": {
+    "reply_now": {
+      "reply_now": 26,
+      "reply_later": 0,
+      "forward": 0,
+      "archive": 0,
+      "delete": 0
+    },
+    "reply_later": {
+      "reply_now": 22,
+      "reply_later": 2,
+      "forward": 3,
+      "archive": 0,
+      "delete": 0
+    },
+    "forward": {
+      "reply_now": 0,
+      "reply_later": 1,
+      "forward": 1,
+      "archive": 0,
+      "delete": 0
+    },
+    "archive": {
+      "reply_now": 0,
+      "reply_later": 0,
+      "forward": 0,
+      "archive": 0,
+      "delete": 0
+    },
+    "delete": {
+      "reply_now": 38,
+      "reply_later": 1,
+      "forward": 10,
+      "archive": 11,
+      "delete": 244
+    }
+  },
+  "inference_time_seconds": 0.0009911060333251953,
+  "samples_per_second": 362221.58672119316,
+  "timestamp": "2026-01-04 02:23:22"
+}
