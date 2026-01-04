@@ -27,6 +27,10 @@ from .content import (
     get_content_extractor,
     DEFAULT_EMBEDDING_DIM,
 )
+from .relationship import (
+    RelationshipFeatures,
+    CommunicationGraph,
+)
 
 
 @dataclass
@@ -39,6 +43,7 @@ class CombinedFeatures:
     people: PeopleFeatures
     temporal: TemporalFeatures
     content: Optional[ContentFeatures] = None  # Optional for backward compat
+    relationship: Optional[RelationshipFeatures] = None  # Optional for backward compat
 
     # Computed scores
     project_score: float = 0.0
@@ -46,25 +51,32 @@ class CombinedFeatures:
     task_score: float = 0.0
     people_score: float = 0.0
     temporal_score: float = 0.0
+    relationship_score: float = 0.0
     overall_priority: float = 0.0
 
-    def to_feature_vector(self, include_content: bool = True) -> Union["np.ndarray", list[float]]:
+    def to_feature_vector(
+        self,
+        include_content: bool = True,
+        include_relationship: bool = True,
+    ) -> Union["np.ndarray", list[float]]:
         """Convert to unified feature vector for ML pipeline.
 
         Returns concatenated vector of all features plus computed scores.
 
-        Vector structure (with content):
+        Vector structure (full):
         - Project features: 8 dims
         - Topic features: 20 dims
         - Task features: 12 dims
         - People features: 15 dims
         - Temporal features: 8 dims
-        - Computed scores: 6 dims (project, topic, task, people, temporal, overall)
+        - Relationship features: 11 dims (if include_relationship=True and available)
+        - Computed scores: 7 dims (project, topic, task, people, temporal, relationship, overall)
         - Content embedding: 384 dims (if include_content=True and content is available)
-        - Total: 69 dims (without content) or 453 dims (with content)
+        - Total: 69 dims (base) + 11 (relationship) + 384 (content) = 464 dims (full)
 
         Args:
             include_content: Whether to include content embeddings (default True)
+            include_relationship: Whether to include relationship features (default True)
 
         Returns:
             Feature vector as numpy array or list
@@ -76,13 +88,14 @@ class CombinedFeatures:
         people_vec = self.people.to_feature_vector()
         temporal_vec = self.temporal.to_feature_vector()
 
-        # Computed scores
+        # Computed scores (now includes relationship_score)
         scores = [
             self.project_score,
             self.topic_score,
             self.task_score,
             self.people_score,
             self.temporal_score,
+            self.relationship_score,
             self.overall_priority,
         ]
 
@@ -95,6 +108,10 @@ class CombinedFeatures:
                 np.asarray(temporal_vec),
                 np.array(scores, dtype=np.float32),
             ])
+            # Add relationship features if available and requested
+            if include_relationship and self.relationship is not None:
+                relationship_vec = self.relationship.to_feature_vector()
+                base_vec = np.concatenate([base_vec, np.asarray(relationship_vec)])
             # Add content embedding if available and requested
             if include_content and self.content is not None:
                 content_vec = self.content.to_feature_vector()
@@ -109,6 +126,13 @@ class CombinedFeatures:
                 else:
                     combined.extend(list(vec))
             combined.extend(scores)
+            # Add relationship features if available and requested
+            if include_relationship and self.relationship is not None:
+                relationship_vec = self.relationship.to_feature_vector()
+                if isinstance(relationship_vec, list):
+                    combined.extend(relationship_vec)
+                else:
+                    combined.extend(list(relationship_vec))
             # Add content embedding if available and requested
             if include_content and self.content is not None:
                 content_vec = self.content.to_feature_vector()
@@ -127,6 +151,7 @@ class CombinedFeatures:
                 'task': self.task_score,
                 'people': self.people_score,
                 'temporal': self.temporal_score,
+                'relationship': self.relationship_score,
                 'overall_priority': self.overall_priority,
             },
             'project': {
@@ -164,9 +189,25 @@ class CombinedFeatures:
                 'is_weekend': self.temporal.is_weekend,
                 'urgency': self.temporal.temporal_urgency,
             },
-            'vector_dims': len(self.to_feature_vector(include_content=self.content is not None)),
-            'vector_dims_without_content': len(self.to_feature_vector(include_content=False)),
+            'vector_dims': len(self.to_feature_vector(
+                include_content=self.content is not None,
+                include_relationship=self.relationship is not None,
+            )),
+            'vector_dims_base': len(self.to_feature_vector(
+                include_content=False,
+                include_relationship=False,
+            )),
         }
+        if self.relationship is not None:
+            result['relationship'] = {
+                'sender_response_deviation': self.relationship.sender_response_deviation,
+                'sender_frequency_rank': self.relationship.sender_frequency_rank,
+                'inferred_hierarchy': self.relationship.inferred_hierarchy,
+                'relationship_strength': self.relationship.relationship_strength,
+                'emails_from_sender_30d': self.relationship.emails_from_sender_30d,
+                'response_rate_to_sender': self.relationship.response_rate_to_sender,
+                'communication_asymmetry': self.relationship.communication_asymmetry,
+            }
         if self.content is not None:
             result['content'] = {
                 'subject_length': self.content.subject_length,
@@ -177,12 +218,35 @@ class CombinedFeatures:
         return result
 
 
+def compute_relationship_score(features: RelationshipFeatures) -> float:
+    """Compute relationship score from relationship features.
+
+    Combines hierarchy, strength, and response patterns into a 0-1 score.
+
+    Args:
+        features: RelationshipFeatures from relationship analysis
+
+    Returns:
+        Relationship score 0-1
+    """
+    # Weight hierarchy and strength heavily
+    score = (
+        features.inferred_hierarchy * 0.30 +
+        features.relationship_strength * 0.25 +
+        features.sender_frequency_rank * 0.20 +
+        features.response_rate_to_sender * 0.15 +
+        (0.5 + features.sender_response_deviation * 0.5) * 0.10  # Normalize deviation
+    )
+    return min(1.0, max(0.0, score))
+
+
 def compute_overall_priority(
     project_score: float,
     topic_score: float,
     task_score: float,
     people_score: float,
     temporal_score: float = 0.5,
+    relationship_score: float = 0.5,
     *,
     weights: Optional[dict[str, float]] = None,
 ) -> float:
@@ -194,6 +258,7 @@ def compute_overall_priority(
         task_score: Score from task extraction
         people_score: Score from people analysis
         temporal_score: Score from temporal features (default 0.5 for backward compat)
+        relationship_score: Score from relationship features (default 0.5 for backward compat)
         weights: Optional custom weights (must sum to 1.0)
 
     Returns:
@@ -201,19 +266,21 @@ def compute_overall_priority(
     """
     if weights is None:
         weights = {
-            'people': 0.25,
-            'project': 0.20,
-            'topic': 0.20,
-            'task': 0.20,
-            'temporal': 0.15,
+            'people': 0.20,
+            'project': 0.18,
+            'topic': 0.18,
+            'task': 0.18,
+            'temporal': 0.13,
+            'relationship': 0.13,
         }
 
     priority = (
-        weights.get('people', 0.25) * people_score +
-        weights.get('project', 0.20) * project_score +
-        weights.get('topic', 0.20) * topic_score +
-        weights.get('task', 0.20) * task_score +
-        weights.get('temporal', 0.15) * temporal_score
+        weights.get('people', 0.20) * people_score +
+        weights.get('project', 0.18) * project_score +
+        weights.get('topic', 0.18) * topic_score +
+        weights.get('task', 0.18) * task_score +
+        weights.get('temporal', 0.13) * temporal_score +
+        weights.get('relationship', 0.13) * relationship_score
     )
 
     return min(1.0, max(0.0, priority))
@@ -229,6 +296,7 @@ def extract_combined_features(
     weights: Optional[dict[str, float]] = None,
     include_content: bool = False,
     content_extractor: Optional[ContentFeatureExtractor] = None,
+    relationship_graph: Optional[CommunicationGraph] = None,
 ) -> CombinedFeatures:
     """Extract all features from an email and combine into unified representation.
 
@@ -241,6 +309,7 @@ def extract_combined_features(
         weights: Optional custom priority weights
         include_content: Whether to extract content embeddings (default False for backward compat)
         content_extractor: Optional content extractor instance (uses global if None)
+        relationship_graph: Optional CommunicationGraph for relationship features
 
     Returns:
         CombinedFeatures with all extracted information
@@ -271,6 +340,13 @@ def extract_combined_features(
         else:
             content_features = get_content_extractor().extract(email)
 
+    # Extract relationship features if graph provided
+    relationship_features = None
+    relationship_score = 0.5  # Default neutral score
+    if relationship_graph is not None and user_email:
+        relationship_features = relationship_graph.get_relationship_features(email, user_email)
+        relationship_score = compute_relationship_score(relationship_features)
+
     # Compute scores
     # Project score uses the project_features internal score
     project_score = project_features.project_score
@@ -286,6 +362,7 @@ def extract_combined_features(
         task_score,
         people_score,
         temporal_score,
+        relationship_score,
         weights=weights,
     )
 
@@ -296,11 +373,13 @@ def extract_combined_features(
         people=people_features,
         temporal=temporal_features,
         content=content_features,
+        relationship=relationship_features,
         project_score=project_score,
         topic_score=topic_score,
         task_score=task_score,
         people_score=people_score,
         temporal_score=temporal_score,
+        relationship_score=relationship_score,
         overall_priority=overall_priority,
     )
 
@@ -315,6 +394,7 @@ def extract_batch(
     weights: Optional[dict[str, float]] = None,
     include_content: bool = False,
     content_extractor: Optional[ContentFeatureExtractor] = None,
+    relationship_graph: Optional[CommunicationGraph] = None,
 ) -> list[CombinedFeatures]:
     """Extract features from a batch of emails.
 
@@ -327,6 +407,7 @@ def extract_batch(
         weights: Optional priority weights
         include_content: Whether to extract content embeddings
         content_extractor: Optional content extractor instance
+        relationship_graph: Optional CommunicationGraph for relationship features
 
     Returns:
         List of CombinedFeatures, one per email
@@ -360,6 +441,13 @@ def extract_batch(
         # Get content features from pre-computed batch
         content_features = content_features_list[i] if content_features_list else None
 
+        # Extract relationship features if graph provided
+        relationship_features = None
+        relationship_score = 0.5  # Default neutral score
+        if relationship_graph is not None and user_email:
+            relationship_features = relationship_graph.get_relationship_features(email, user_email)
+            relationship_score = compute_relationship_score(relationship_features)
+
         # Compute scores
         project_score = project_features.project_score
         topic_score = compute_topic_score(topic_features)
@@ -369,6 +457,7 @@ def extract_batch(
 
         overall_priority = compute_overall_priority(
             project_score, topic_score, task_score, people_score, temporal_score,
+            relationship_score,
             weights=weights
         )
 
@@ -379,11 +468,13 @@ def extract_batch(
             people=people_features,
             temporal=temporal_features,
             content=content_features,
+            relationship=relationship_features,
             project_score=project_score,
             topic_score=topic_score,
             task_score=task_score,
             people_score=people_score,
             temporal_score=temporal_score,
+            relationship_score=relationship_score,
             overall_priority=overall_priority,
         ))
 
@@ -396,6 +487,8 @@ def build_feature_matrix(
     user_email: str = '',
     user_context: Optional[dict] = None,
     include_content: bool = False,
+    include_relationship: bool = False,
+    relationship_graph: Optional[CommunicationGraph] = None,
 ) -> Union["np.ndarray", list[list[float]]]:
     """Build feature matrix from batch of emails.
 
@@ -404,6 +497,8 @@ def build_feature_matrix(
         user_email: The user's email address
         user_context: Optional historical context
         include_content: Whether to include content embeddings
+        include_relationship: Whether to include relationship features in vector
+        relationship_graph: Optional CommunicationGraph for relationship features
 
     Returns:
         Matrix of shape (n_emails, n_features)
@@ -413,8 +508,12 @@ def build_feature_matrix(
         user_email=user_email,
         user_context=user_context,
         include_content=include_content,
+        relationship_graph=relationship_graph,
     )
-    vectors = [f.to_feature_vector(include_content=include_content) for f in features_list]
+    vectors = [f.to_feature_vector(
+        include_content=include_content,
+        include_relationship=include_relationship,
+    ) for f in features_list]
 
     if HAS_NUMPY:
         return np.stack(vectors)
@@ -433,8 +532,10 @@ class CombinedFeatureExtractor:
         user_context: Optional[dict] = None,
         weights: Optional[dict[str, float]] = None,
         include_content: bool = False,
+        include_relationship: bool = False,
         content_model: str = 'all-MiniLM-L6-v2',
         device: Optional[str] = None,
+        relationship_graph: Optional[CommunicationGraph] = None,
     ):
         """Initialize extractor with user context.
 
@@ -443,14 +544,18 @@ class CombinedFeatureExtractor:
             user_context: Historical interaction data
             weights: Priority computation weights
             include_content: Whether to include content embeddings
+            include_relationship: Whether to include relationship features
             content_model: Sentence transformer model name for content embeddings
             device: Device for content model ('cpu', 'cuda', 'mps', or None for auto)
+            relationship_graph: Pre-built CommunicationGraph for relationship features
         """
         self.user_email = user_email
         self.user_context = user_context or {}
         self.weights = weights
         self.include_content = include_content
+        self.include_relationship = include_relationship
         self._content_extractor = None
+        self._relationship_graph = relationship_graph
 
         if include_content:
             self._content_extractor = ContentFeatureExtractor(
@@ -467,6 +572,7 @@ class CombinedFeatureExtractor:
             weights=self.weights,
             include_content=self.include_content,
             content_extractor=self._content_extractor,
+            relationship_graph=self._relationship_graph,
         )
 
     def extract_batch(self, emails: list[dict]) -> list[CombinedFeatures]:
@@ -478,16 +584,23 @@ class CombinedFeatureExtractor:
             weights=self.weights,
             include_content=self.include_content,
             content_extractor=self._content_extractor,
+            relationship_graph=self._relationship_graph,
         )
 
     def to_vector(self, email: dict) -> Union["np.ndarray", list[float]]:
         """Extract and convert to feature vector."""
-        return self.extract(email).to_feature_vector(include_content=self.include_content)
+        return self.extract(email).to_feature_vector(
+            include_content=self.include_content,
+            include_relationship=self.include_relationship,
+        )
 
     def to_matrix(self, emails: list[dict]) -> Union["np.ndarray", list[list[float]]]:
         """Extract and convert to feature matrix."""
         features_list = self.extract_batch(emails)
-        vectors = [f.to_feature_vector(include_content=self.include_content) for f in features_list]
+        vectors = [f.to_feature_vector(
+            include_content=self.include_content,
+            include_relationship=self.include_relationship,
+        ) for f in features_list]
         if HAS_NUMPY:
             return np.stack(vectors)
         return vectors
@@ -496,11 +609,18 @@ class CombinedFeatureExtractor:
         """Update user context for future extractions."""
         self.user_context.update(user_context)
 
+    def set_relationship_graph(self, graph: CommunicationGraph) -> None:
+        """Set or update the relationship graph for feature extraction."""
+        self._relationship_graph = graph
+
     @property
     def feature_dim(self) -> int:
         """Return dimensionality of feature vector."""
-        # Base: 8 + 20 + 12 + 15 + 8 + 6 = 69
-        base_dim = 69
+        # Base: 8 + 20 + 12 + 15 + 8 + 7 = 70 (scores now include relationship)
+        base_dim = 70
+        if self.include_relationship:
+            # Add relationship feature dimension (11 dims)
+            base_dim += 11
         if self.include_content:
             # Add content embedding dimension
             if self._content_extractor is not None:
@@ -516,10 +636,13 @@ FEATURE_DIMS = {
     'task': 12,
     'people': 15,
     'temporal': 8,
-    'scores': 6,
+    'relationship': 11,
+    'scores': 7,  # project, topic, task, people, temporal, relationship, overall
     'content': DEFAULT_EMBEDDING_DIM,  # 384 for all-MiniLM-L6-v2
-    'total_base': 69,  # Without content
-    'total_with_content': 69 + DEFAULT_EMBEDDING_DIM,  # 453 with content
+    'total_base': 70,  # Without relationship or content (8+20+12+15+8+7)
+    'total_with_relationship': 81,  # With relationship (70+11)
+    'total_with_content': 70 + DEFAULT_EMBEDDING_DIM,  # 454 with content
+    'total_full': 81 + DEFAULT_EMBEDDING_DIM,  # 465 with relationship and content
 }
 
 

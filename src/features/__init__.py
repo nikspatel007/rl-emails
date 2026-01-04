@@ -71,6 +71,7 @@ from .combined import (
     extract_batch,
     build_feature_matrix,
     compute_overall_priority,
+    compute_relationship_score,
     FEATURE_DIMS,
 )
 
@@ -121,5 +122,6 @@ __all__ = [
     'extract_batch',
     'build_feature_matrix',
     'compute_overall_priority',
+    'compute_relationship_score',
     'FEATURE_DIMS',
 ]
