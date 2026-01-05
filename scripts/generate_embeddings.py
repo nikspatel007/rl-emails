@@ -55,8 +55,8 @@ async def get_unprocessed_emails(conn: asyncpg.Connection, limit: int = 1000) ->
     rows = await conn.fetch("""
         SELECT e.id, e.message_id, e.subject, e.body_text, e.from_email
         FROM emails e
-        LEFT JOIN email_embeddings em ON e.id = em.email_id
-        WHERE em.id IS NULL
+        JOIN email_features ef ON e.id = ef.email_id
+        WHERE ef.content_embedding IS NULL
           AND e.body_text IS NOT NULL
           AND length(e.body_text) > 50
         ORDER BY e.date_parsed DESC
@@ -69,10 +69,14 @@ async def get_unprocessed_emails(conn: asyncpg.Connection, limit: int = 1000) ->
 async def get_embedding_counts(conn: asyncpg.Connection) -> tuple[int, int]:
     """Get total eligible and embedded counts."""
     total = await conn.fetchval("""
-        SELECT COUNT(*) FROM emails
-        WHERE body_text IS NOT NULL AND length(body_text) > 50
+        SELECT COUNT(*) FROM emails e
+        JOIN email_features ef ON e.id = ef.email_id
+        WHERE e.body_text IS NOT NULL AND length(e.body_text) > 50
     """)
-    embedded = await conn.fetchval("SELECT COUNT(*) FROM email_embeddings")
+    embedded = await conn.fetchval("""
+        SELECT COUNT(*) FROM email_features
+        WHERE content_embedding IS NOT NULL
+    """)
     return total, embedded
 
 
@@ -94,20 +98,20 @@ async def save_embeddings(
     conn: asyncpg.Connection,
     embeddings_data: list[tuple[int, str, list[float]]]
 ) -> int:
-    """Save embeddings to database."""
+    """Save embeddings to email_features table."""
     saved = 0
     for email_id, message_id, embedding in embeddings_data:
         try:
             # Convert list to pgvector format
             embedding_str = f"[{','.join(str(x) for x in embedding)}]"
             await conn.execute("""
-                INSERT INTO email_embeddings (email_id, message_id, embedding, model)
-                VALUES ($1, $2, $3::vector, $4)
-                ON CONFLICT (email_id) DO UPDATE SET
-                    embedding = EXCLUDED.embedding,
-                    model = EXCLUDED.model,
-                    created_at = NOW()
-            """, email_id, message_id, embedding_str, EMBEDDING_MODEL)
+                UPDATE email_features SET
+                    content_embedding = $2::vector,
+                    embedding_model = $3,
+                    embedding_dim = $4,
+                    computed_at = NOW()
+                WHERE email_id = $1
+            """, email_id, embedding_str, EMBEDDING_MODEL, EMBEDDING_DIM)
             saved += 1
         except Exception as e:
             print(f"  Error saving embedding for {email_id}: {e}", file=sys.stderr)
