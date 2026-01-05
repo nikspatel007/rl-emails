@@ -1,0 +1,339 @@
+{
+  "generated_at": "2026-01-05T00:08:07.469538",
+  "model": "claude-3-5-haiku-latest",
+  "workers": 8,
+  "email_count": 20,
+  "timing": {
+    "total_seconds": 10.004,
+    "effective_per_email": 0.5002,
+    "throughput": 2.0,
+    "avg_api_ms": 4438.2,
+    "target_met": false
+  },
+  "quality": {
+    "parse_success_rate": 95.0,
+    "total_tasks": 10
+  },
+  "results": [
+    {
+      "email_id": "<0100019b86c47d20-3bd2d74b-3c82-4a95-9f16-22b0afe2102c-000000@email.amazonses.com>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [
+        {
+          "description": "Verify recent account sign-in",
+          "deadline": null,
+          "assignee": "user",
+          "task_type": "review",
+          "urgency": 0.4
+        }
+      ],
+      "overall_urgency": 0.4,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Account sign-in notification from Amazon",
+      "extraction_time_ms": 2322,
+      "parse_success": true
+    },
+    {
+      "email_id": "<974aa692be8d46198cbee609a654468e@BYAPR15MB4246.namprd15.prod.outlook.com>",
+      "is_service_email": true,
+      "service_type": "system",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Out of office auto-reply until Jan 5, 2025",
+      "extraction_time_ms": 3109,
+      "parse_success": true
+    },
+    {
+      "email_id": "<CAHTEdysrUrNtkCeBuPkkd77bhqpAoG9Pxp0BW_WYKXYJ9bG4xg@mail.gmail.com>",
+      "is_service_email": false,
+      "service_type": null,
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "project",
+      "summary": "PostgreSQL license granted for Priority Lens project",
+      "extraction_time_ms": 1992,
+      "parse_success": true
+    },
+    {
+      "email_id": "<BYAPR15MB4246AAB1EC494D3A8BF8A221D1B9A@BYAPR15MB4246.namprd15.prod.outlook.com>",
+      "is_service_email": false,
+      "service_type": null,
+      "tasks": [
+        {
+          "description": "Review PostgreSQL boilerplate license",
+          "deadline": null,
+          "assignee": "user",
+          "task_type": "review",
+          "urgency": 0.2
+        }
+      ],
+      "overall_urgency": 0.2,
+      "requires_response": false,
+      "topic_category": "project",
+      "summary": "License granted for UEV Next PostgreSQL boilerplate",
+      "extraction_time_ms": 2203,
+      "parse_success": true
+    },
+    {
+      "email_id": "<6959ac74a7c94_11410d01466858@sharedworker-6fb6db4dd-gdnz8.mail>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [
+        {
+          "description": "Accept or decline GitHub repository invitation",
+          "deadline": "7 days from now",
+          "assignee": "user",
+          "task_type": "decision",
+          "urgency": 0.4
+        }
+      ],
+      "overall_urgency": 0.4,
+      "requires_response": false,
+      "topic_category": "project",
+      "summary": "GitHub repository collaboration invite from theBoEffect",
+      "extraction_time_ms": 2343,
+      "parse_success": true
+    },
+    {
+      "email_id": "<FZTueiaBQr6GMqZ4Bortyw@geopod-ismtpd-0>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [
+        {
+          "description": "Subscribe to Premium Connectivity",
+          "deadline": "2026-01-18",
+          "assignee": "user",
+          "task_type": "decision",
+          "urgency": 0.4
+        }
+      ],
+      "overall_urgency": 0.3,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Tesla Premium Connectivity trial ending soon",
+      "extraction_time_ms": 3503,
+      "parse_success": true
+    },
+    {
+      "email_id": "<1082147023.96518100.1767482981915@lva1-app184386.prod.linkedin.com>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [
+        {
+          "description": "View LinkedIn message from Mark Mroczkowski",
+          "deadline": null,
+          "assignee": "user",
+          "task_type": "review",
+          "urgency": 0.3
+        }
+      ],
+      "overall_urgency": 0.2,
+      "requires_response": false,
+      "topic_category": "social",
+      "summary": "New LinkedIn message notification from Mark Mroczkowski",
+      "extraction_time_ms": 3356,
+      "parse_success": true
+    },
+    {
+      "email_id": "<20260103223938.79757e7349bd82bc@cio78617.browse.ai>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [
+        {
+          "description": "Review neighborhood images screenshot changes",
+          "deadline": null,
+          "assignee": "user",
+          "task_type": "review",
+          "urgency": 0.3
+        }
+      ],
+      "overall_urgency": 0.3,
+      "requires_response": false,
+      "topic_category": "fyi",
+      "summary": "Browse.ai detected changes in neighborhood images screenshot",
+      "extraction_time_ms": 2489,
+      "parse_success": true
+    },
+    {
+      "email_id": "<CAG7y5KhDwVibMKNukiWfh9OJLdM2MoqXyJsJ76a0j9+7n2uAhA@mail.gmail.com>",
+      "is_service_email": false,
+      "service_type": null,
+      "tasks": [
+        {
+          "description": "Complete the light order",
+          "deadline": "today",
+          "assignee": "user",
+          "task_type": "send",
+          "urgency": 0.7
+        }
+      ],
+      "overall_urgency": 0.7,
+      "requires_response": false,
+      "topic_category": "request",
+      "summary": "Complete light order today",
+      "extraction_time_ms": 4071,
+      "parse_success": true
+    },
+    {
+      "email_id": "<6959954b24ba0_f210d0341b2@flexworker-5df6cccc7-gb28h.mail>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [
+        {
+          "description": "Accept GitHub organization invitation for @uevc",
+          "deadline": "7 days from now",
+          "assignee": "user",
+          "task_type": "review",
+          "urgency": 0.4
+        }
+      ],
+      "overall_urgency": 0.3,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "GitHub org invite from @theBoEffect to join @uevc",
+      "extraction_time_ms": 4550,
+      "parse_success": true
+    },
+    {
+      "email_id": "<00.71.61222.84399596@mr29p01nt-txnmsbadger004.ise.apple.com>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [
+        {
+          "description": "Check refund status for order W1316438739",
+          "deadline": null,
+          "assignee": "user",
+          "task_type": "review",
+          "urgency": 0.3
+        }
+      ],
+      "overall_urgency": 0.2,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Apple order W1316438739 pickup canceled, refund processing",
+      "extraction_time_ms": 4691,
+      "parse_success": true
+    },
+    {
+      "email_id": "<20260103214035.14802e637943944d@mailer.humblebundle.com>",
+      "is_service_email": true,
+      "service_type": "marketing",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "fyi",
+      "summary": "Humble Bundle promotional email for royalty-free music bundle",
+      "extraction_time_ms": 4199,
+      "parse_success": true
+    },
+    {
+      "email_id": "<ecBT5Yu7T6iNC9mXY2uxqw@geopod-ismtpd-13>",
+      "is_service_email": true,
+      "service_type": "marketing",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "social",
+      "summary": "Marketing email showcasing new engagement ring trends for 2026",
+      "extraction_time_ms": 4549,
+      "parse_success": true
+    },
+    {
+      "email_id": "<139747780.10158420.1767471495575.JavaMail.webuser@iaasn00692072>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Chase transaction alert for Starbucks purchase",
+      "extraction_time_ms": 5115,
+      "parse_success": true
+    },
+    {
+      "email_id": "<20260103192712.1a02376850cc5c56@mailer.humblebundle.com>",
+      "is_service_email": true,
+      "service_type": "marketing",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "fyi",
+      "summary": "Dark Horse Comics sale/promotion from Humble Bundle",
+      "extraction_time_ms": 5114,
+      "parse_success": true
+    },
+    {
+      "email_id": "<75.B7.50804.38969596@i-0a220bb3f131580d3.mta1vrest.sd.prd.sparkpost>",
+      "is_service_email": true,
+      "service_type": "marketing",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Credit card balance transfer offer with 21 months 0% APR",
+      "extraction_time_ms": 5991,
+      "parse_success": true
+    },
+    {
+      "email_id": "<z044jYnTQhSR4CUGFxyVXg@geopod-ismtpd-65>",
+      "is_service_email": false,
+      "service_type": null,
+      "tasks": [],
+      "overall_urgency": 0.0,
+      "requires_response": false,
+      "topic_category": "fyi",
+      "summary": "JSON parse failed",
+      "extraction_time_ms": 9999,
+      "parse_success": false
+    },
+    {
+      "email_id": "<1048692470.3549271.1767466414241@mail.yahoo.com>",
+      "is_service_email": false,
+      "service_type": null,
+      "tasks": [
+        {
+          "description": "Review Bloomigdale Business License document",
+          "deadline": null,
+          "assignee": "user",
+          "task_type": "review",
+          "urgency": 0.4
+        }
+      ],
+      "overall_urgency": 0.3,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Business license document uploaded to Drive",
+      "extraction_time_ms": 6375,
+      "parse_success": true
+    },
+    {
+      "email_id": "<0100019b85152357-36cb503d-974b-4fa7-bf21-5876f4e4c553-000000@email.amazonses.com>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "admin",
+      "summary": "Amazon package delivered to Naperville, IL",
+      "extraction_time_ms": 6135,
+      "parse_success": true
+    },
+    {
+      "email_id": "<0100019b851523db-6ebd39e2-9dcb-4cd0-b000-ac2decf3263e-000000@email.amazonses.com>",
+      "is_service_email": true,
+      "service_type": "notification",
+      "tasks": [],
+      "overall_urgency": 0.1,
+      "requires_response": false,
+      "topic_category": "fyi",
+      "summary": "Amazon package delivered - Reusable Sticker Book",
+      "extraction_time_ms": 6658,
+      "parse_success": true
+    }
+  ]
+}

@@ -26,7 +26,7 @@ except ImportError:
 
 
 # Claude Haiku configuration
-HAIKU_MODEL = "claude-haiku-4-5-20250120"
+HAIKU_MODEL = "claude-3-5-haiku-latest"
 
 # PostgreSQL configuration
 PG_CONFIG = {
