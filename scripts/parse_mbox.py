@@ -9,15 +9,17 @@ import mailbox
 import json
 import email.utils
 import re
+import os
 from pathlib import Path
 from datetime import datetime
 from email.header import decode_header
 from collections import Counter
 
 
-MBOX_PATH = Path("/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/takeout/extracted/All mail Including Spam and Trash.mbox")
-OUTPUT_PATH = Path("/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/parsed_emails.jsonl")
-REPORT_PATH = Path("/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/parse_report.json")
+# Read paths from environment variables, with fallbacks
+MBOX_PATH = Path(os.environ.get("MBOX_PATH", "/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/takeout/extracted/All mail Including Spam and Trash.mbox"))
+OUTPUT_PATH = Path(os.environ.get("PARSED_JSONL", "/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/parsed_emails.jsonl"))
+REPORT_PATH = OUTPUT_PATH.parent / "parse_report.json"
 
 
 def decode_header_value(value: str | None) -> str:

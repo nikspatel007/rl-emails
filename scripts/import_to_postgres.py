@@ -15,6 +15,7 @@ Requirements:
 
 import asyncio
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -23,9 +24,10 @@ from typing import Optional
 
 import asyncpg
 
-# Configuration
-DB_URL = "postgresql://postgres:postgres@localhost:5433/rl_emails"
-JSONL_PATH = Path("/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/enriched_emails.jsonl")
+# Configuration - read from environment variables with fallbacks
+DB_URL = os.environ.get("DB_URL", "postgresql://postgres:postgres@localhost:5433/rl_emails")
+# Try PARSED_JSONL first (direct from parse), then ENRICHED_JSONL, then default
+JSONL_PATH = Path(os.environ.get("PARSED_JSONL", os.environ.get("ENRICHED_JSONL", "/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/parsed_emails.jsonl")))
 BATCH_SIZE = 1000
 
 # Email parsing regex

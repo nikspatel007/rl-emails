@@ -68,9 +68,9 @@ async def populate_threads(
                 COUNT(*) as email_count,
                 COUNT(*) FILTER (WHERE is_sent = true) as your_email_count,
                 COUNT(*) FILTER (WHERE is_sent = true AND in_reply_to IS NOT NULL) as your_reply_count,
-                MIN(date) as started_at,
-                MAX(date) as last_activity,
-                EXTRACT(EPOCH FROM (MAX(date) - MIN(date))) as thread_duration_seconds,
+                MIN(date_parsed) as started_at,
+                MAX(date_parsed) as last_activity,
+                EXTRACT(EPOCH FROM (MAX(date_parsed) - MIN(date_parsed))) as thread_duration_seconds,
                 bool_or(has_attachments) as has_attachments,
                 COALESCE(SUM(attachment_count), 0) as total_attachment_count
             FROM emails
@@ -80,12 +80,12 @@ async def populate_threads(
         response_times AS (
             SELECT
                 thread_id,
-                AVG(EXTRACT(EPOCH FROM (date - lag_date))) as avg_response_time_seconds
+                AVG(EXTRACT(EPOCH FROM (date_parsed - lag_date))) as avg_response_time_seconds
             FROM (
                 SELECT
                     thread_id,
-                    date,
-                    LAG(date) OVER (PARTITION BY thread_id ORDER BY date) as lag_date
+                    date_parsed,
+                    LAG(date_parsed) OVER (PARTITION BY thread_id ORDER BY date_parsed) as lag_date
                 FROM emails
                 WHERE thread_id IS NOT NULL
             ) sub
@@ -177,7 +177,10 @@ async def verify_results(conn: asyncpg.Connection):
         print(f"Max emails in thread: {sample['max_emails_per_thread']}")
         print(f"Avg participants: {sample['avg_participants']:.1f}")
         print(f"Threads with attachments: {sample['threads_with_attachments']}")
-        print(f"Avg thread duration: {sample['avg_duration_hours']:.1f} hours")
+        if sample['avg_duration_hours'] is not None:
+            print(f"Avg thread duration: {sample['avg_duration_hours']:.1f} hours")
+        else:
+            print("Avg thread duration: N/A")
 
 
 async def main():

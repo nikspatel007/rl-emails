@@ -305,41 +305,125 @@ CREATE INDEX idx_tasks_complexity ON tasks(complexity);
 CREATE INDEX idx_tasks_deadline ON tasks(deadline);
 CREATE INDEX idx_tasks_urgency_score ON tasks(urgency_score);
 
+-- NOTE: email_features table is defined above (line 211)
+
 -- ============================================
--- email_features
--- Extracted ML features per email
+-- projects
+-- Discovered projects from labels, participants, clustering
 -- ============================================
-CREATE TABLE email_features (
+CREATE TABLE projects (
     id SERIAL PRIMARY KEY,
-    email_id INTEGER REFERENCES emails(id) ON DELETE CASCADE UNIQUE NOT NULL,
-
-    -- Computed scores (0-1 range)
-    project_score FLOAT NOT NULL,
-    topic_score FLOAT NOT NULL,
-    task_score FLOAT NOT NULL,
-    people_score FLOAT NOT NULL,
-    temporal_score FLOAT NOT NULL,
-    service_score FLOAT NOT NULL,
-    relationship_score FLOAT NOT NULL,
-    overall_priority FLOAT NOT NULL,
-
-    -- Feature vector (103 dims without content, 487 with content)
-    feature_vector FLOAT[] NOT NULL,
-    feature_dim INTEGER NOT NULL,
-
-    -- Content embedding (384 dims, optional)
-    content_embedding FLOAT[],
-    content_dim INTEGER,
-
-    -- Metadata
-    extraction_version INTEGER DEFAULT 1,
-    extracted_at TIMESTAMPTZ DEFAULT NOW()
+    name TEXT NOT NULL,
+    source TEXT NOT NULL,  -- 'gmail_label', 'participant', 'cluster'
+    project_type TEXT,     -- label category, cluster topic
+    email_count INTEGER DEFAULT 0,
+    participant_emails TEXT[],
+    keywords TEXT[],
+    first_seen TIMESTAMPTZ,
+    last_seen TIMESTAMPTZ,
+    merged_into INTEGER REFERENCES projects(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_email_features_email_id ON email_features(email_id);
-CREATE INDEX idx_email_features_overall_priority ON email_features(overall_priority DESC);
-CREATE INDEX idx_email_features_project_score ON email_features(project_score);
-CREATE INDEX idx_email_features_task_score ON email_features(task_score);
+CREATE INDEX idx_projects_source ON projects(source);
+CREATE INDEX idx_projects_name ON projects(name);
+CREATE INDEX idx_projects_merged ON projects(merged_into);
+
+-- ============================================
+-- email_project_links
+-- Many-to-many between emails and projects
+-- ============================================
+CREATE TABLE email_project_links (
+    id SERIAL PRIMARY KEY,
+    email_id INTEGER REFERENCES emails(id) ON DELETE CASCADE,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    confidence FLOAT DEFAULT 1.0,
+    source TEXT,  -- how was link determined
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(email_id, project_id)
+);
+
+CREATE INDEX idx_epl_email_id ON email_project_links(email_id);
+CREATE INDEX idx_epl_project_id ON email_project_links(project_id);
+
+-- ============================================
+-- priority_contexts
+-- Detected high-engagement periods
+-- ============================================
+CREATE TABLE priority_contexts (
+    id SERIAL PRIMARY KEY,
+    week_start DATE NOT NULL,
+    email_count INTEGER,
+    avg_response_hours FLOAT,
+    baseline_hours FLOAT,
+    deviation_factor FLOAT,
+    keywords TEXT[],
+    key_participants TEXT[],
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_pc_week ON priority_contexts(week_start);
+CREATE INDEX idx_pc_deviation ON priority_contexts(deviation_factor);
+
+-- ============================================
+-- email_embeddings
+-- OpenAI embeddings for semantic search
+-- ============================================
+CREATE TABLE email_embeddings (
+    id SERIAL PRIMARY KEY,
+    email_id INTEGER REFERENCES emails(id) ON DELETE CASCADE UNIQUE,
+    embedding vector(1536),
+    model TEXT DEFAULT 'text-embedding-3-small',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_embed_email_id ON email_embeddings(email_id);
+
+-- ============================================
+-- email_llm_features
+-- LLM-extracted features (tasks, urgency, topics)
+-- ============================================
+CREATE TABLE email_llm_features (
+    id SERIAL PRIMARY KEY,
+    email_id TEXT NOT NULL,
+    is_service_email BOOLEAN,
+    service_type TEXT,
+    tasks JSONB,
+    overall_urgency FLOAT,
+    requires_response BOOLEAN,
+    topic_category TEXT,
+    summary TEXT,
+    extraction_time_ms INTEGER,
+    parse_success BOOLEAN,
+    model TEXT,
+    raw_response TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(email_id, model)
+);
+
+CREATE INDEX idx_llm_features_email_id ON email_llm_features(email_id);
+CREATE INDEX idx_llm_features_model ON email_llm_features(model);
+
+-- ============================================
+-- human_task_labels
+-- Manual labels for training
+-- ============================================
+CREATE TABLE human_task_labels (
+    id SERIAL PRIMARY KEY,
+    email_id INTEGER REFERENCES emails(id) ON DELETE CASCADE,
+    task_index INTEGER,
+    task_description TEXT,
+    project_id INTEGER REFERENCES projects(id),
+    project_relevancy TEXT,
+    triage_category TEXT,
+    extraction_quality TEXT,
+    notes TEXT,
+    labeler TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_htl_email_id ON human_task_labels(email_id);
+CREATE INDEX idx_htl_labeler ON human_task_labels(labeler);
 
 -- ============================================
 -- Summary
