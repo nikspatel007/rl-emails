@@ -5,27 +5,27 @@ A Streamlit-based interface for collecting human preference judgments on email
 pairs. Supports smart sampling to focus human effort on uncertain/edge cases.
 
 Usage:
-    # Start SurrealDB first
-    ./scripts/start_db.sh gmail
+    # Start PostgreSQL first
+    ./scripts/start_db.sh
 
     # Run the UI
     streamlit run scripts/labeling_ui.py
 
-    # With custom implicit preferences file
-    streamlit run scripts/labeling_ui.py -- --implicit-prefs data/preferences_implicit.json
+    # With custom labeler name
+    streamlit run scripts/labeling_ui.py -- --labeler "nik"
 """
 
 import argparse
 import asyncio
-import json
 import random
 import sys
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
+import asyncpg
 import streamlit as st
-from surrealdb import AsyncSurreal
+
+# Database configuration
+DB_URL = "postgresql://postgres:postgres@localhost:5433/rl_emails"
 
 
 # Preference labels
@@ -97,177 +97,248 @@ EMAIL_CSS = """
 
 
 class EmailLoader:
-    """Load emails from SurrealDB for labeling."""
+    """Load emails from PostgreSQL for labeling."""
 
-    def __init__(
-        self,
-        url: str = 'ws://localhost:8001/rpc',
-        namespace: str = 'rl_emails',
-        database: str = 'gmail',
-    ):
-        self.url = url
-        self.namespace = namespace
-        self.database = database
+    def __init__(self, db_url: str = DB_URL):
+        self.db_url = db_url
         self._emails_cache = {}
+        self._id_cache = {}  # message_id -> id mapping
 
-    async def load_email(self, message_id: str) -> Optional[dict]:
-        """Load a single email by message_id."""
-        if message_id in self._emails_cache:
-            return self._emails_cache[message_id]
+    async def load_email(self, email_id: int) -> Optional[dict]:
+        """Load a single email by id."""
+        if email_id in self._emails_cache:
+            return self._emails_cache[email_id]
 
-        db = AsyncSurreal(self.url)
         try:
-            await db.connect()
-            await db.signin({'username': 'root', 'password': 'root'})
-            await db.use(self.namespace, self.database)
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                row = await conn.fetchrow(
+                    '''
+                    SELECT
+                        id,
+                        message_id,
+                        subject,
+                        body_text as body,
+                        from_email,
+                        to_emails,
+                        date_parsed,
+                        labels,
+                        action
+                    FROM emails
+                    WHERE id = $1
+                    ''',
+                    email_id
+                )
 
-            result = await db.query(
-                '''
-                SELECT
-                    message_id,
-                    subject,
-                    body,
-                    from_email,
-                    to_emails,
-                    date_str,
-                    labels,
-                    action
-                FROM emails
-                WHERE message_id = $message_id
-                LIMIT 1
-                ''',
-                {'message_id': message_id}
-            )
+                if row:
+                    email = dict(row)
+                    # Format date for display
+                    if email.get('date_parsed'):
+                        email['date_str'] = email['date_parsed'].strftime('%Y-%m-%d %H:%M')
+                    self._emails_cache[email_id] = email
+                    return email
 
-            if result and isinstance(result, list) and len(result) > 0:
-                email = result[0]
-                self._emails_cache[message_id] = email
-                return email
-
-            return None
+                return None
+            finally:
+                await conn.close()
         except Exception as e:
             st.error(f"Database error: {e}")
             return None
-        finally:
-            await db.close()
 
-    async def load_emails_batch(self, message_ids: list[str]) -> dict[str, dict]:
+    async def load_emails_batch(self, email_ids: list[int]) -> dict[int, dict]:
         """Load multiple emails efficiently."""
         # Check cache first
-        missing = [mid for mid in message_ids if mid not in self._emails_cache]
+        missing = [eid for eid in email_ids if eid not in self._emails_cache]
 
         if missing:
-            db = AsyncSurreal(self.url)
             try:
-                await db.connect()
-                await db.signin({'username': 'root', 'password': 'root'})
-                await db.use(self.namespace, self.database)
-
-                # Load in batches of 50
-                for i in range(0, len(missing), 50):
-                    batch = missing[i:i + 50]
-                    result = await db.query(
+                conn = await asyncpg.connect(self.db_url)
+                try:
+                    rows = await conn.fetch(
                         '''
                         SELECT
+                            id,
                             message_id,
                             subject,
-                            body,
+                            body_text as body,
                             from_email,
                             to_emails,
-                            date_str,
+                            date_parsed,
                             labels,
                             action
                         FROM emails
-                        WHERE message_id IN $ids
+                        WHERE id = ANY($1)
                         ''',
-                        {'ids': batch}
+                        missing
                     )
 
-                    if result and isinstance(result, list):
-                        for email in result:
-                            mid = email.get('message_id')
-                            if mid:
-                                self._emails_cache[mid] = email
+                    for row in rows:
+                        email = dict(row)
+                        if email.get('date_parsed'):
+                            email['date_str'] = email['date_parsed'].strftime('%Y-%m-%d %H:%M')
+                        self._emails_cache[email['id']] = email
+                finally:
+                    await conn.close()
             except Exception as e:
                 st.error(f"Database error: {e}")
+
+        return {eid: self._emails_cache.get(eid) for eid in email_ids}
+
+    async def get_email_count(self) -> int:
+        """Get total number of emails in the database."""
+        try:
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                count = await conn.fetchval('SELECT COUNT(*) FROM emails')
+                return count or 0
             finally:
-                await db.close()
+                await conn.close()
+        except Exception as e:
+            st.error(f"Database error: {e}")
+            return 0
 
-        return {mid: self._emails_cache.get(mid) for mid in message_ids}
+    async def get_random_pair(self, exclude_ids: set[tuple[int, int]]) -> Optional[tuple[int, int]]:
+        """Get a random pair of email IDs for comparison, excluding already labeled pairs."""
+        try:
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                # Get two random emails with decent content (not service emails)
+                rows = await conn.fetch(
+                    '''
+                    SELECT e.id
+                    FROM emails e
+                    LEFT JOIN email_features ef ON ef.email_id = e.id
+                    WHERE e.body_text IS NOT NULL
+                      AND length(e.body_text) > 50
+                      AND (ef.is_service_email IS NULL OR ef.is_service_email = false)
+                    ORDER BY RANDOM()
+                    LIMIT 100
+                    '''
+                )
 
+                if len(rows) < 2:
+                    return None
 
-class SmartSampler:
-    """Smart sampling to prioritize uncertain/edge case pairs."""
+                # Find a pair not in exclude_ids
+                ids = [r['id'] for r in rows]
+                random.shuffle(ids)
 
-    def __init__(
-        self,
-        implicit_pairs: list[dict],
-        labeled_pairs: list[dict],
-    ):
-        self.implicit_pairs = implicit_pairs
-        self.labeled_pairs = labeled_pairs
-        self._labeled_set = {
-            (p['chosen_id'], p['rejected_id'])
-            for p in labeled_pairs
-        }
+                for i in range(len(ids)):
+                    for j in range(i + 1, min(i + 20, len(ids))):
+                        pair = (ids[i], ids[j])
+                        reverse_pair = (ids[j], ids[i])
+                        if pair not in exclude_ids and reverse_pair not in exclude_ids:
+                            return pair
 
-    def get_unlabeled_pairs(self) -> list[dict]:
-        """Get pairs that haven't been labeled yet."""
-        return [
-            p for p in self.implicit_pairs
-            if (p['chosen_id'], p['rejected_id']) not in self._labeled_set
-        ]
-
-    def sample_next_pair(self) -> Optional[dict]:
-        """Sample the next pair to label using smart sampling.
-
-        Prioritizes:
-        1. Low confidence implicit pairs (uncertain)
-        2. Pairs from underrepresented signal types
-        3. Random sampling among remaining
-        """
-        unlabeled = self.get_unlabeled_pairs()
-        if not unlabeled:
+                return None
+            finally:
+                await conn.close()
+        except Exception as e:
+            st.error(f"Database error: {e}")
             return None
 
-        # Bucket by confidence
-        low_conf = [p for p in unlabeled if p.get('confidence', 1.0) < 0.65]
-        med_conf = [p for p in unlabeled if 0.65 <= p.get('confidence', 1.0) < 0.8]
-        high_conf = [p for p in unlabeled if p.get('confidence', 1.0) >= 0.8]
 
-        # Prioritize low confidence (80%), then medium (15%), then high (5%)
-        r = random.random()
-        if r < 0.8 and low_conf:
-            pool = low_conf
-        elif r < 0.95 and med_conf:
-            pool = med_conf
-        elif high_conf:
-            pool = high_conf
-        else:
-            pool = unlabeled
+class PreferenceStore:
+    """Store human preferences in PostgreSQL."""
 
-        # Balance signal types
-        signal_counts = {}
-        for p in self.labeled_pairs:
-            sig = p.get('signal_type', 'unknown')
-            signal_counts[sig] = signal_counts.get(sig, 0) + 1
+    def __init__(self, db_url: str = DB_URL):
+        self.db_url = db_url
 
-        # Favor underrepresented signals
-        min_count = min(signal_counts.values()) if signal_counts else 0
-        underrepresented = [
-            sig for sig, count in signal_counts.items()
-            if count <= min_count + 10
-        ]
+    async def ensure_table(self):
+        """Create human_preferences table if it doesn't exist."""
+        try:
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS human_preferences (
+                        id SERIAL PRIMARY KEY,
+                        email_left_id INTEGER REFERENCES emails(id),
+                        email_right_id INTEGER REFERENCES emails(id),
+                        preference TEXT CHECK (preference IN ('left', 'right', 'same', 'skip')),
+                        confidence TEXT CHECK (confidence IN ('certain', 'unsure')),
+                        labeler TEXT,
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                ''')
+                # Create index for faster duplicate checking
+                await conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_human_preferences_pair
+                    ON human_preferences(email_left_id, email_right_id)
+                ''')
+            finally:
+                await conn.close()
+        except Exception as e:
+            st.error(f"Error creating table: {e}")
 
-        if underrepresented:
-            underrep_pool = [
-                p for p in pool
-                if p.get('signal_type') in underrepresented
-            ]
-            if underrep_pool:
-                pool = underrep_pool
+    async def save_preference(
+        self,
+        email_left_id: int,
+        email_right_id: int,
+        preference: str,
+        confidence: str,
+        labeler: str,
+    ) -> bool:
+        """Save a single preference to the database."""
+        try:
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                await conn.execute(
+                    '''
+                    INSERT INTO human_preferences
+                        (email_left_id, email_right_id, preference, confidence, labeler)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ''',
+                    email_left_id, email_right_id, preference, confidence, labeler
+                )
+                return True
+            finally:
+                await conn.close()
+        except Exception as e:
+            st.error(f"Error saving preference: {e}")
+            return False
 
-        return random.choice(pool) if pool else None
+    async def get_labeled_pairs(self) -> set[tuple[int, int]]:
+        """Get all pairs that have already been labeled."""
+        try:
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                rows = await conn.fetch(
+                    'SELECT email_left_id, email_right_id FROM human_preferences'
+                )
+                pairs = set()
+                for row in rows:
+                    pairs.add((row['email_left_id'], row['email_right_id']))
+                    # Also add reverse to avoid duplicate comparisons
+                    pairs.add((row['email_right_id'], row['email_left_id']))
+                return pairs
+            finally:
+                await conn.close()
+        except Exception as e:
+            st.error(f"Error loading labeled pairs: {e}")
+            return set()
+
+    async def get_stats(self) -> dict:
+        """Get labeling statistics."""
+        try:
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                row = await conn.fetchrow('''
+                    SELECT
+                        COUNT(*) as total_labeled,
+                        COUNT(*) FILTER (WHERE preference = 'left') as left_chosen,
+                        COUNT(*) FILTER (WHERE preference = 'right') as right_chosen,
+                        COUNT(*) FILTER (WHERE preference = 'same') as same,
+                        COUNT(*) FILTER (WHERE preference = 'skip') as skipped,
+                        COUNT(*) FILTER (WHERE confidence = 'certain') as certain,
+                        COUNT(*) FILTER (WHERE confidence = 'unsure') as unsure
+                    FROM human_preferences
+                ''')
+                return dict(row) if row else {}
+            finally:
+                await conn.close()
+        except Exception as e:
+            st.error(f"Error loading stats: {e}")
+            return {}
 
 
 def render_email_card(email: dict, side: str, selected: bool = False) -> str:
@@ -324,16 +395,19 @@ def render_email_card(email: dict, side: str, selected: bool = False) -> str:
     """
 
 
-def init_session_state():
+def init_session_state(labeler: str):
     """Initialize Streamlit session state."""
     if 'loader' not in st.session_state:
         st.session_state.loader = EmailLoader()
 
-    if 'implicit_pairs' not in st.session_state:
-        st.session_state.implicit_pairs = []
+    if 'store' not in st.session_state:
+        st.session_state.store = PreferenceStore()
 
-    if 'human_labels' not in st.session_state:
-        st.session_state.human_labels = []
+    if 'labeler' not in st.session_state:
+        st.session_state.labeler = labeler
+
+    if 'labeled_pairs' not in st.session_state:
+        st.session_state.labeled_pairs = set()
 
     if 'current_pair' not in st.session_state:
         st.session_state.current_pair = None
@@ -361,89 +435,44 @@ def init_session_state():
             'unsure': 0,
         }
 
-
-def load_implicit_preferences(path: Path) -> list[dict]:
-    """Load implicit preference pairs from JSON file."""
-    if not path.exists():
-        return []
-
-    try:
-        with open(path) as f:
-            data = json.load(f)
-
-        if isinstance(data, dict) and 'pairs' in data:
-            return data['pairs']
-        elif isinstance(data, list):
-            return data
-        else:
-            st.error(f"Unexpected format in {path}")
-            return []
-    except Exception as e:
-        st.error(f"Error loading {path}: {e}")
-        return []
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = False
 
 
-def save_human_labels(path: Path, labels: list[dict]):
-    """Save human preference labels to JSON."""
-    output = {
-        'metadata': {
-            'total_labels': len(labels),
-            'last_updated': datetime.now().isoformat(),
-        },
-        'labels': labels
-    }
+async def initialize_data():
+    """Initialize data from the database."""
+    store = st.session_state.store
+    await store.ensure_table()
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w') as f:
-        json.dump(output, f, indent=2)
+    # Load existing labeled pairs
+    st.session_state.labeled_pairs = await store.get_labeled_pairs()
 
-
-def load_human_labels(path: Path) -> list[dict]:
-    """Load existing human labels."""
-    if not path.exists():
-        return []
-
-    try:
-        with open(path) as f:
-            data = json.load(f)
-        return data.get('labels', [])
-    except Exception:
-        return []
+    # Load stats
+    stats = await store.get_stats()
+    if stats:
+        st.session_state.stats = stats
 
 
 async def get_next_pair():
     """Get the next pair to label."""
-    sampler = SmartSampler(
-        st.session_state.implicit_pairs,
-        st.session_state.human_labels
-    )
+    loader = st.session_state.loader
+    labeled_pairs = st.session_state.labeled_pairs
 
-    pair = sampler.sample_next_pair()
+    pair = await loader.get_random_pair(labeled_pairs)
     if not pair:
         st.session_state.current_pair = None
         st.session_state.current_left = None
         st.session_state.current_right = None
         return
 
-    # Randomly assign left/right
-    if random.random() < 0.5:
-        left_id = pair['chosen_id']
-        right_id = pair['rejected_id']
-        implicit_choice = 'left'
-    else:
-        left_id = pair['rejected_id']
-        right_id = pair['chosen_id']
-        implicit_choice = 'right'
+    left_id, right_id = pair
 
     # Load emails
-    loader = st.session_state.loader
     emails = await loader.load_emails_batch([left_id, right_id])
 
     st.session_state.current_pair = {
-        **pair,
         'left_id': left_id,
         'right_id': right_id,
-        'implicit_choice': implicit_choice,
     }
     st.session_state.current_left = emails.get(left_id)
     st.session_state.current_right = emails.get(right_id)
@@ -451,56 +480,46 @@ async def get_next_pair():
     st.session_state.confidence = CONFIDENCE_CERTAIN
 
 
-def record_label(preference: str, confidence: str):
-    """Record a human preference label."""
+async def record_label(preference: str, confidence: str):
+    """Record a human preference label to the database."""
     pair = st.session_state.current_pair
     if not pair:
         return
 
-    # Map preference to chosen/rejected
-    if preference == PREFERENCE_LEFT:
-        chosen_id = pair['left_id']
-        rejected_id = pair['right_id']
-    elif preference == PREFERENCE_RIGHT:
-        chosen_id = pair['right_id']
-        rejected_id = pair['left_id']
-    else:
-        # Same or skip - no clear preference
-        chosen_id = None
-        rejected_id = None
+    store = st.session_state.store
+    left_id = pair['left_id']
+    right_id = pair['right_id']
+    labeler = st.session_state.labeler
 
-    label = {
-        'chosen_id': chosen_id,
-        'rejected_id': rejected_id,
-        'preference': preference,
-        'confidence': confidence,
-        'implicit_signal_type': pair.get('signal_type'),
-        'implicit_confidence': pair.get('confidence'),
-        'agrees_with_implicit': (
-            preference == PREFERENCE_LEFT and pair['implicit_choice'] == 'left'
-        ) or (
-            preference == PREFERENCE_RIGHT and pair['implicit_choice'] == 'right'
-        ),
-        'labeled_at': datetime.now().isoformat(),
-    }
+    # Save to database
+    success = await store.save_preference(
+        email_left_id=left_id,
+        email_right_id=right_id,
+        preference=preference,
+        confidence=confidence,
+        labeler=labeler,
+    )
 
-    st.session_state.human_labels.append(label)
+    if success:
+        # Add to local cache to avoid showing same pair
+        st.session_state.labeled_pairs.add((left_id, right_id))
+        st.session_state.labeled_pairs.add((right_id, left_id))
 
-    # Update stats
-    st.session_state.stats['total_labeled'] += 1
-    if preference == PREFERENCE_LEFT:
-        st.session_state.stats['left_chosen'] += 1
-    elif preference == PREFERENCE_RIGHT:
-        st.session_state.stats['right_chosen'] += 1
-    elif preference == PREFERENCE_SAME:
-        st.session_state.stats['same'] += 1
-    else:
-        st.session_state.stats['skipped'] += 1
+        # Update stats
+        st.session_state.stats['total_labeled'] += 1
+        if preference == PREFERENCE_LEFT:
+            st.session_state.stats['left_chosen'] += 1
+        elif preference == PREFERENCE_RIGHT:
+            st.session_state.stats['right_chosen'] += 1
+        elif preference == PREFERENCE_SAME:
+            st.session_state.stats['same'] += 1
+        else:
+            st.session_state.stats['skipped'] += 1
 
-    if confidence == CONFIDENCE_CERTAIN:
-        st.session_state.stats['certain'] += 1
-    else:
-        st.session_state.stats['unsure'] += 1
+        if confidence == CONFIDENCE_CERTAIN:
+            st.session_state.stats['certain'] += 1
+        else:
+            st.session_state.stats['unsure'] += 1
 
 
 def main():
@@ -513,16 +532,10 @@ def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--implicit-prefs',
-        type=Path,
-        default=Path('data/preferences_implicit.json'),
-        help='Path to implicit preferences JSON'
-    )
-    parser.add_argument(
-        '--output',
-        type=Path,
-        default=Path('data/preferences_human.json'),
-        help='Path to save human labels'
+        '--labeler',
+        type=str,
+        default='anonymous',
+        help='Name of the labeler for tracking'
     )
 
     # Streamlit passes args after --
@@ -532,12 +545,12 @@ def main():
         args = parser.parse_args([])
 
     # Initialize state
-    init_session_state()
+    init_session_state(args.labeler)
 
-    # Load data on first run
-    if not st.session_state.implicit_pairs:
-        st.session_state.implicit_pairs = load_implicit_preferences(args.implicit_prefs)
-        st.session_state.human_labels = load_human_labels(args.output)
+    # Initialize database on first run
+    if not st.session_state.initialized:
+        asyncio.run(initialize_data())
+        st.session_state.initialized = True
 
     # Custom CSS
     st.markdown(EMAIL_CSS, unsafe_allow_html=True)
@@ -549,56 +562,33 @@ def main():
     # Stats sidebar
     with st.sidebar:
         st.header("Progress")
-        total_pairs = len(st.session_state.implicit_pairs)
-        labeled = len(st.session_state.human_labels)
-        remaining = total_pairs - labeled
+        labeled = st.session_state.stats.get('total_labeled', 0)
 
         st.metric("Labeled", labeled)
-        st.metric("Remaining", remaining)
-
-        if total_pairs > 0:
-            progress = labeled / total_pairs
-            st.progress(progress)
-            st.caption(f"{progress * 100:.1f}% complete")
 
         st.divider()
         st.header("Statistics")
         stats = st.session_state.stats
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Left", stats['left_chosen'])
-            st.metric("Same", stats['same'])
-            st.metric("Certain", stats['certain'])
+            st.metric("Left", stats.get('left_chosen', 0))
+            st.metric("Same", stats.get('same', 0))
+            st.metric("Certain", stats.get('certain', 0))
         with col2:
-            st.metric("Right", stats['right_chosen'])
-            st.metric("Skipped", stats['skipped'])
-            st.metric("Unsure", stats['unsure'])
+            st.metric("Right", stats.get('right_chosen', 0))
+            st.metric("Skipped", stats.get('skipped', 0))
+            st.metric("Unsure", stats.get('unsure', 0))
 
         st.divider()
-
-        # Export button
-        if st.button("💾 Save Labels", type="primary"):
-            save_human_labels(args.output, st.session_state.human_labels)
-            st.success(f"Saved {len(st.session_state.human_labels)} labels to {args.output}")
-
-        # Data info
-        st.divider()
-        st.caption(f"Implicit pairs: {args.implicit_prefs}")
-        st.caption(f"Output: {args.output}")
-
-    # Main content
-    if not st.session_state.implicit_pairs:
-        st.warning("No implicit preference pairs found. Run extract_implicit_preferences.py first.")
-        st.code(f"python scripts/extract_implicit_preferences.py -o {args.implicit_prefs}")
-        return
+        st.caption(f"Labeler: {st.session_state.labeler}")
+        st.caption(f"Database: PostgreSQL (localhost:5433)")
 
     # Load next pair if needed
     if st.session_state.current_pair is None:
         asyncio.run(get_next_pair())
 
     if st.session_state.current_pair is None:
-        st.success("🎉 All pairs have been labeled!")
-        save_human_labels(args.output, st.session_state.human_labels)
+        st.success("🎉 No more pairs available! All sampled pairs have been labeled.")
         return
 
     # Display emails side by side
@@ -662,12 +652,7 @@ def main():
     _, submit_col, _ = st.columns([1, 1, 1])
     with submit_col:
         if st.button("✓ Submit & Next", use_container_width=True, type="primary", disabled=st.session_state.selection is None):
-            record_label(st.session_state.selection, st.session_state.confidence)
-
-            # Auto-save every 10 labels
-            if len(st.session_state.human_labels) % 10 == 0:
-                save_human_labels(args.output, st.session_state.human_labels)
-
+            asyncio.run(record_label(st.session_state.selection, st.session_state.confidence))
             asyncio.run(get_next_pair())
             st.rerun()
 
@@ -676,9 +661,8 @@ def main():
         pair = st.session_state.current_pair
         if pair:
             st.json({
-                'signal_type': pair.get('signal_type'),
-                'implicit_confidence': pair.get('confidence'),
-                'implicit_choice': pair.get('implicit_choice'),
+                'left_id': pair.get('left_id'),
+                'right_id': pair.get('right_id'),
             })
 
 
