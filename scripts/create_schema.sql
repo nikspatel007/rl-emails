@@ -277,6 +277,35 @@ CREATE INDEX idx_email_features_priority ON email_features(overall_priority);
 CREATE INDEX idx_email_features_service_type ON email_features(service_type);
 
 -- ============================================
+-- tasks
+-- Extracted tasks from emails
+-- ============================================
+CREATE TABLE tasks (
+    id SERIAL PRIMARY KEY,
+    task_id TEXT UNIQUE NOT NULL,
+    email_id INTEGER REFERENCES emails(id) ON DELETE CASCADE,
+
+    -- Task details
+    description TEXT NOT NULL,
+    deadline TIMESTAMPTZ,
+    deadline_text TEXT,
+    assignee_hint TEXT,
+    complexity TEXT CHECK (complexity IN ('trivial', 'quick', 'medium', 'substantial', 'unknown')),
+    task_type TEXT CHECK (task_type IN ('review', 'send', 'schedule', 'decision', 'research', 'create', 'follow_up', 'other')),
+    urgency_score FLOAT CHECK (urgency_score >= 0 AND urgency_score <= 1),
+    source_text TEXT,
+
+    -- Metadata
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_tasks_email_id ON tasks(email_id);
+CREATE INDEX idx_tasks_task_type ON tasks(task_type);
+CREATE INDEX idx_tasks_complexity ON tasks(complexity);
+CREATE INDEX idx_tasks_deadline ON tasks(deadline);
+CREATE INDEX idx_tasks_urgency_score ON tasks(urgency_score);
+
+-- ============================================
 -- Summary
 -- ============================================
 -- Tables created:
@@ -286,3 +315,4 @@ CREATE INDEX idx_email_features_service_type ON email_features(service_type);
 --   threads: Thread-level aggregations
 --   users: Communication stats per user
 --   email_features: Pre-computed ML features per email
+--   tasks: Extracted tasks from emails
