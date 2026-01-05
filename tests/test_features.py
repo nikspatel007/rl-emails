@@ -29,6 +29,12 @@ from src.features.topic import (
     classify_topic,
     compute_topic_score,
 )
+from src.features.urgency import (
+    UrgencyFeatures,
+    compute_email_urgency,
+    batch_compute_urgency,
+    urgency_to_priority_bucket,
+)
 
 
 class TestDeadlineParsing(unittest.TestCase):
@@ -539,6 +545,123 @@ class TestIntegration(unittest.TestCase):
 
         # Verify sender level (VP = executive/manager)
         self.assertGreaterEqual(people_features.sender_org_level, 2)
+
+
+class TestUrgencyScoring(unittest.TestCase):
+    """Tests for email-level urgency scoring."""
+
+    def test_urgent_keywords_detected(self):
+        """Test that urgent keywords are detected."""
+        email = {
+            'from': 'sender@enron.com',
+            'to': 'user@enron.com',
+            'subject': 'URGENT: Need response',
+            'body': 'This is critical and needs immediate attention.',
+        }
+        urgency = compute_email_urgency(email)
+        self.assertGreater(urgency.keyword_urgency, 0.8)
+        self.assertIn('urgent', urgency.detected_keywords)
+        self.assertIn('critical', urgency.detected_keywords)
+
+    def test_asap_keyword(self):
+        """Test ASAP keyword detection."""
+        email = {
+            'from': 'sender@enron.com',
+            'to': 'user@enron.com',
+            'subject': 'Need this ASAP',
+            'body': 'Please send the report ASAP.',
+        }
+        urgency = compute_email_urgency(email)
+        self.assertGreater(urgency.keyword_urgency, 0.8)
+        self.assertIn('asap', urgency.detected_keywords)
+
+    def test_deadline_affects_urgency(self):
+        """Test that deadlines increase urgency."""
+        with_deadline = {
+            'from': 'sender@enron.com',
+            'to': 'user@enron.com',
+            'subject': 'Report needed',
+            'body': 'Please complete by EOD today.',
+        }
+        without_deadline = {
+            'from': 'sender@enron.com',
+            'to': 'user@enron.com',
+            'subject': 'FYI',
+            'body': 'Just sharing this update.',
+        }
+        urgency_with = compute_email_urgency(with_deadline)
+        urgency_without = compute_email_urgency(without_deadline)
+
+        self.assertGreater(urgency_with.deadline_urgency, urgency_without.deadline_urgency)
+        self.assertTrue(urgency_with.has_explicit_deadline)
+        self.assertFalse(urgency_without.has_explicit_deadline)
+
+    def test_executive_sender_increases_urgency(self):
+        """Test that executive senders get higher urgency."""
+        from_exec = {
+            'from': 'ceo@enron.com',
+            'to': 'user@enron.com',
+            'x_from': 'John Smith, CEO',
+            'subject': 'Quick question',
+            'body': 'Can you look into this?',
+        }
+        from_peer = {
+            'from': 'colleague@enron.com',
+            'to': 'user@enron.com',
+            'x_from': 'Jane Doe',
+            'subject': 'Quick question',
+            'body': 'Can you look into this?',
+        }
+        urgency_exec = compute_email_urgency(from_exec)
+        urgency_peer = compute_email_urgency(from_peer)
+
+        self.assertEqual(urgency_exec.sender_org_level, 3)
+        self.assertLess(urgency_peer.sender_org_level, 3)
+        self.assertGreater(urgency_exec.overall_urgency, urgency_peer.overall_urgency)
+
+    def test_no_urgency_fyi(self):
+        """Test that FYI emails have low urgency."""
+        email = {
+            'from': 'sender@enron.com',
+            'to': 'user@enron.com',
+            'subject': 'FYI',
+            'body': 'Just keeping you in the loop. No action needed.',
+        }
+        urgency = compute_email_urgency(email)
+        self.assertEqual(urgency.keyword_urgency, 0.0)
+        self.assertEqual(len(urgency.detected_keywords), 0)
+        self.assertLess(urgency.overall_urgency, 0.5)
+
+    def test_priority_buckets(self):
+        """Test priority bucket assignment."""
+        self.assertEqual(urgency_to_priority_bucket(0.9), 'critical')
+        self.assertEqual(urgency_to_priority_bucket(0.7), 'high')
+        self.assertEqual(urgency_to_priority_bucket(0.5), 'medium')
+        self.assertEqual(urgency_to_priority_bucket(0.2), 'low')
+
+    def test_feature_vector_dimensions(self):
+        """Test that urgency feature vector has correct dimensions."""
+        email = {
+            'from': 'sender@enron.com',
+            'to': 'user@enron.com',
+            'subject': 'Test',
+            'body': 'Test email.',
+        }
+        urgency = compute_email_urgency(email)
+        vector = urgency.to_feature_vector()
+        self.assertEqual(len(vector), 8)
+
+    def test_batch_compute(self):
+        """Test batch urgency computation."""
+        emails = [
+            {'from': 'a@enron.com', 'to': 'user@enron.com', 'subject': 'URGENT', 'body': 'Critical'},
+            {'from': 'b@enron.com', 'to': 'user@enron.com', 'subject': 'FYI', 'body': 'Update'},
+            {'from': 'c@enron.com', 'to': 'user@enron.com', 'subject': 'Question', 'body': 'Info?'},
+        ]
+        results = batch_compute_urgency(emails)
+        self.assertEqual(len(results), 3)
+        # First email should have highest urgency
+        self.assertGreater(results[0].overall_urgency, results[1].overall_urgency)
 
 
 if __name__ == '__main__':

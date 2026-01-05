@@ -10,6 +10,7 @@ This package provides feature extraction for the email RL policy network:
 - relationship: Communication graph and relational priority model
 - service: Service domain classification (transactional, newsletter, unsubscribe detection)
 - combined: Unified feature vector for policy network input
+- urgency: Email-level urgency scoring
 """
 
 from .project import (
@@ -121,6 +122,13 @@ from .timeline import (
     get_topic_state_at,
 )
 
+from .urgency import (
+    UrgencyFeatures,
+    compute_email_urgency,
+    batch_compute_urgency,
+    urgency_to_priority_bucket,
+)
+
 __all__ = [
     # Project features
     'ProjectFeatures',
@@ -206,4 +214,9 @@ __all__ = [
     'TopicSnapshot',
     'get_relationship_at',
     'get_topic_state_at',
+    # Urgency features
+    'UrgencyFeatures',
+    'compute_email_urgency',
+    'batch_compute_urgency',
+    'urgency_to_priority_bucket',
 ]
