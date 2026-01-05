@@ -47,6 +47,13 @@ EXTRACTION_QUALITY = [
     ("wrong", "Wrong - Not a real task"),
 ]
 
+# Email statuses - these are lifecycle states, NOT projects
+# They should never appear in project selection dropdowns
+EMAIL_STATUSES = [
+    "archived", "read", "unread", "starred", "snoozed",
+    "inbox", "spam", "trash", "draft", "sent",
+]
+
 # Custom CSS for better styling
 CUSTOM_CSS = """
 <style>
@@ -191,27 +198,43 @@ def get_emails_for_verification(conn, limit=50, offset=0, unlabeled_only=True,
 
 
 def get_email_projects(conn, email_id: int):
-    """Get projects associated with an email."""
+    """Get projects associated with an email.
+
+    Excludes email statuses (Read, Unread, Archived, etc.) which are
+    lifecycle states, not topical project groupings.
+    """
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("""
+        # Build exclusion list - case insensitive matching
+        status_exclusions = ", ".join([f"'{s}'" for s in EMAIL_STATUSES])
+
+        cur.execute(f"""
             SELECT p.id, p.name, p.source, p.project_type,
                    epl.confidence, epl.source as link_source
             FROM email_project_links epl
             JOIN projects p ON p.id = epl.project_id
             WHERE epl.email_id = %s
               AND p.merged_into IS NULL
+              AND LOWER(p.name) NOT IN ({status_exclusions})
             ORDER BY epl.confidence DESC
         """, (email_id,))
         return cur.fetchall()
 
 
 def get_all_projects(conn):
-    """Get all active projects for selection."""
+    """Get all active projects for selection.
+
+    Excludes email statuses (Read, Unread, Archived, etc.) which are
+    lifecycle states, not topical project groupings.
+    """
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("""
+        # Build exclusion list - case insensitive matching
+        status_exclusions = ", ".join([f"'{s}'" for s in EMAIL_STATUSES])
+
+        cur.execute(f"""
             SELECT id, name, source, project_type, email_count
             FROM projects
             WHERE merged_into IS NULL
+              AND LOWER(name) NOT IN ({status_exclusions})
             ORDER BY email_count DESC
             LIMIT 500
         """)
