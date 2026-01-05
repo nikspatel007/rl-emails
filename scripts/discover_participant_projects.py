@@ -14,15 +14,20 @@ Usage:
 
 import argparse
 import asyncio
+import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
 import asyncpg
+from dotenv import load_dotenv
 
-# Database connection
-DB_URL = 'postgresql://postgres:postgres@localhost:5433/rl_emails'
+# Load environment variables from .env file
+load_dotenv()
+
+# Database connection (from environment or default)
+DB_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5433/rl_emails')
 
 # Minimum emails for a participant group to be considered a project
 DEFAULT_MIN_EMAILS = 3

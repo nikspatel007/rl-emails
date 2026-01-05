@@ -17,15 +17,18 @@ Usage:
 
 import argparse
 import asyncio
+import json
+import os
 import random
 import sys
 from typing import Optional
 
 import asyncpg
 import streamlit as st
+from dotenv import load_dotenv
 
-# Database configuration
-DB_URL = "postgresql://postgres:postgres@localhost:5433/rl_emails"
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Preference labels
@@ -99,8 +102,8 @@ EMAIL_CSS = """
 class EmailLoader:
     """Load emails from PostgreSQL for labeling."""
 
-    def __init__(self, db_url: str = DB_URL):
-        self.db_url = db_url
+    def __init__(self, db_url: str = None):
+        self.db_url = db_url or os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5433/rl_emails')
         self._emails_cache = {}
         self._id_cache = {}  # message_id -> id mapping
 

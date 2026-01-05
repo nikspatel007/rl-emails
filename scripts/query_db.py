@@ -30,20 +30,26 @@ Example queries:
 
 import argparse
 import json
+import os
 import readline  # noqa: F401 - enables line editing in input()
 import sys
 from typing import Any
 
+from dotenv import load_dotenv
 from surrealdb import Surreal
 
+# Load environment variables from .env file
+load_dotenv()
 
-# Database configurations
+# Database configurations (can be overridden via environment)
 DB_CONFIG = {
     'enron': {'port': 8000, 'db': 'enron'},
     'gmail': {'port': 8001, 'db': 'gmail'},
 }
 
-NAMESPACE = 'rl_emails'
+NAMESPACE = os.environ.get('SURREALDB_NAMESPACE', 'rl_emails')
+SURREALDB_USER = os.environ.get('SURREALDB_USER', 'root')
+SURREALDB_PASS = os.environ.get('SURREALDB_PASS', 'root')
 
 
 def format_result(result: Any, indent: int = 2) -> str:
@@ -139,7 +145,7 @@ def main():
 
     try:
         with Surreal(url) as db:
-            db.signin({'username': 'root', 'password': 'root'})
+            db.signin({'username': SURREALDB_USER, 'password': SURREALDB_PASS})
             db.use(NAMESPACE, config['db'])
 
             if args.query:

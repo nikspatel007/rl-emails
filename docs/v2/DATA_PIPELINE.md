@@ -36,9 +36,28 @@ db/
 
 ---
 
+## Environment Setup
+
+Copy `.env.example` to `.env` and configure your environment:
+
+```bash
+cp .env.example .env
+# Edit .env with your values
+```
+
+Key environment variables:
+- `DATABASE_URL` - PostgreSQL connection string
+- `SURREALDB_GMAIL_URL` - SurrealDB Gmail database URL
+- `OPENAI_API_KEY` - OpenAI API key (for embeddings/LLM features)
+- `ANTHROPIC_API_KEY` - Anthropic API key (optional)
+
+Scripts automatically load `.env` via `python-dotenv`.
+
+---
+
 ## Database
 
-**Connection:** `postgresql://postgres:postgres@localhost:5433/rl_emails`
+**Connection:** Set via `DATABASE_URL` environment variable (default: `postgresql://postgres:postgres@localhost:5433/rl_emails`)
 
 Using existing PostgreSQL 16 instance. pgvector will be added later for embeddings.
 

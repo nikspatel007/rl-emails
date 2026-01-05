@@ -62,6 +62,8 @@ nltk>=3.8.0
 wandb>=0.16.0
 tensorboard>=2.15.0
 
+python-dotenv>=1.0.0  # Environment variable management
+
 # Hugging Face
 datasets>=2.15.0
 huggingface-hub>=0.19.0

@@ -21,13 +21,18 @@ Usage:
 import argparse
 import asyncio
 import json
+import os
 import random
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from surrealdb import AsyncSurreal
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Priority signals - higher is better
@@ -104,19 +109,21 @@ class PreferenceExtractor:
 
     def __init__(
         self,
-        url: str = 'ws://localhost:8001/rpc',
-        namespace: str = 'rl_emails',
+        url: str = None,
+        namespace: str = None,
         database: str = 'gmail',
     ):
-        self.url = url
-        self.namespace = namespace
+        self.url = url or os.environ.get('SURREALDB_GMAIL_URL', 'ws://localhost:8001/rpc')
+        self.namespace = namespace or os.environ.get('SURREALDB_NAMESPACE', 'rl_emails')
         self.database = database
         self.db: AsyncSurreal = None
         self.emails = []
         self.threads = {}
 
-    async def connect(self, username: str = 'root', password: str = 'root'):
+    async def connect(self, username: str = None, password: str = None):
         """Connect to SurrealDB."""
+        username = username or os.environ.get('SURREALDB_USER', 'root')
+        password = password or os.environ.get('SURREALDB_PASS', 'root')
         self.db = AsyncSurreal(self.url)
         await self.db.connect()
         await self.db.signin({'username': username, 'password': password})

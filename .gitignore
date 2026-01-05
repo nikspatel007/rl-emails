@@ -13,6 +13,9 @@ checkpoints/
 # Beads redirect (local runtime)
 .beads/
 
+# Environment variables (contains secrets)
+.env
+
 # Python
 __pycache__/
 *.pyc
