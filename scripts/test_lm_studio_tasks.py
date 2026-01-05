@@ -2,12 +2,17 @@
 """Test script for LM Studio task extraction from emails.
 
 Connects to LM Studio (OpenAI-compatible API) to extract tasks from
-10 sample emails and saves results to test_tasks.json.
+emails and saves results to test_tasks.json.
+
+Usage:
+    python test_lm_studio_tasks.py --count 100 --batch-size 10
 """
 
+import argparse
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from enum import Enum
@@ -192,9 +197,39 @@ def extract_tasks_lm_studio(
 
 def main():
     """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Extract tasks from emails using LM Studio"
+    )
+    parser.add_argument(
+        "--count", "-c",
+        type=int,
+        default=10,
+        help="Number of emails to process (default: 10)"
+    )
+    parser.add_argument(
+        "--batch-size", "-b",
+        type=int,
+        default=10,
+        help="Batch size for progress reporting (default: 10)"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        type=str,
+        default=None,
+        help="Output JSON file (default: test_tasks.json)"
+    )
+    args = parser.parse_args()
+
+    email_count = args.count
+    batch_size = args.batch_size
+    output_file = args.output or os.path.join(
+        os.path.dirname(__file__), "..", "test_tasks.json"
+    )
+
     print("=" * 60)
     print("LM Studio Task Extraction Test")
     print("=" * 60)
+    print(f"  Emails: {email_count}, Batch size: {batch_size}")
     print()
 
     # Step 1: Connect to LM Studio
@@ -220,22 +255,26 @@ def main():
     # Step 2: Query emails from PostgreSQL
     print("2. Querying emails from PostgreSQL...")
     try:
-        emails = get_emails_from_db(limit=10)
+        emails = get_emails_from_db(limit=email_count)
         print(f"   Retrieved {len(emails)} emails")
     except Exception as e:
         print(f"   FAILED: Could not query database: {e}")
         return 1
     print()
 
-    # Step 3: Extract tasks from each email
+    # Step 3: Extract tasks from each email (with timing)
     print("3. Extracting tasks from emails...")
     all_results = []
     total_tasks = 0
+    batch_times = []
+    errors = 0
+
+    start_time = time.time()
+    batch_start = time.time()
 
     for i, email in enumerate(emails, 1):
         email_id = email["message_id"]
-        subject = email["subject"][:60]
-        print(f"   [{i}/10] Processing: {subject}...")
+        subject = email["subject"][:50]
 
         tasks = extract_tasks_lm_studio(
             subject=email["subject"],
@@ -255,35 +294,57 @@ def main():
         }
         all_results.append(result)
         total_tasks += len(tasks)
-        print(f"          Found {len(tasks)} task(s)")
 
+        if len(tasks) == 0 and "Warning" in str(sys.stderr):
+            errors += 1
+
+        # Report progress every batch_size emails
+        if i % batch_size == 0 or i == len(emails):
+            batch_elapsed = time.time() - batch_start
+            batch_times.append(batch_elapsed)
+            emails_per_sec = batch_size / batch_elapsed if batch_elapsed > 0 else 0
+            print(f"   [{i:3d}/{len(emails)}] Batch: {batch_elapsed:.1f}s ({emails_per_sec:.2f} emails/s)")
+            batch_start = time.time()
+
+    total_time = time.time() - start_time
     print()
-    print(f"   Total: {total_tasks} tasks extracted from {len(emails)} emails")
+    print(f"   Total: {total_tasks} tasks from {len(emails)} emails in {total_time:.1f}s")
     print()
 
     # Step 4: Save results to JSON
-    print("4. Saving results to test_tasks.json...")
-    output_path = os.path.join(os.path.dirname(__file__), "..", "test_tasks.json")
+    print("4. Saving results...")
     output = {
         "generated_at": datetime.now().isoformat(),
         "model": LM_STUDIO_MODEL,
         "email_count": len(emails),
         "total_tasks": total_tasks,
+        "timing": {
+            "total_seconds": round(total_time, 2),
+            "emails_per_second": round(len(emails) / total_time, 3) if total_time > 0 else 0,
+            "avg_batch_time": round(sum(batch_times) / len(batch_times), 2) if batch_times else 0,
+        },
         "results": all_results,
     }
 
-    with open(output_path, "w") as f:
+    with open(output_file, "w") as f:
         json.dump(output, f, indent=2)
 
-    print(f"   Saved to: {output_path}")
+    print(f"   Saved to: {output_file}")
     print()
 
     # Step 5: Report summary
     print("5. Summary:")
     print("-" * 40)
-    print(f"   Emails processed: {len(emails)}")
+    print(f"   Emails processed:      {len(emails)}")
     print(f"   Total tasks extracted: {total_tasks}")
-    print(f"   Average tasks per email: {total_tasks / len(emails):.1f}")
+    print(f"   Average tasks/email:   {total_tasks / len(emails):.2f}")
+    print()
+    print("   Timing:")
+    print(f"     Total time:          {total_time:.1f}s")
+    print(f"     Throughput:          {len(emails) / total_time:.2f} emails/s")
+    print(f"     Avg time per email:  {total_time / len(emails):.2f}s")
+    if batch_times:
+        print(f"     Avg batch time:      {sum(batch_times) / len(batch_times):.2f}s")
 
     # Task type breakdown
     type_counts = {}
