@@ -671,25 +671,28 @@ def main():
                     # Human Verified column
                     with col3:
                         with st.expander("Edit Details", expanded=False):
-                            triage = st.selectbox(
+                            triage = st.radio(
                                 "Triage",
                                 options=[t[0] for t in TRIAGE_CATEGORIES],
                                 format_func=lambda x: next((t[1] for t in TRIAGE_CATEGORIES if t[0] == x), x),
-                                key=f"triage_{email['id']}_{idx}"
+                                key=f"triage_{email['id']}_{idx}",
+                                horizontal=True
                             )
 
-                            relevancy = st.selectbox(
+                            relevancy = st.radio(
                                 "Relevancy",
                                 options=[r[0] for r in RELEVANCY_OPTIONS],
                                 format_func=lambda x: next((r[1] for r in RELEVANCY_OPTIONS if r[0] == x), x),
-                                key=f"rel_{email['id']}_{idx}"
+                                key=f"rel_{email['id']}_{idx}",
+                                horizontal=True
                             )
 
-                            quality = st.selectbox(
+                            quality = st.radio(
                                 "Extraction Quality",
                                 options=[q[0] for q in EXTRACTION_QUALITY],
                                 format_func=lambda x: next((q[1] for q in EXTRACTION_QUALITY if q[0] == x), x),
-                                key=f"qual_{email['id']}_{idx}"
+                                key=f"qual_{email['id']}_{idx}",
+                                horizontal=True
                             )
 
                             notes = st.text_input("Notes", key=f"notes_{email['id']}_{idx}")
