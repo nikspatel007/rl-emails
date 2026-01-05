@@ -217,7 +217,76 @@ uv run python scripts/validate_import.py --source "$OUTPUT_DIR/enriched.jsonl" -
 ## Dependencies
 
 ```bash
-uv pip install asyncpg mailbox python-dateutil tqdm
+uv pip install asyncpg mailbox python-dateutil tqdm alembic psycopg2-binary
+```
+
+---
+
+## Database Migrations (Alembic)
+
+We use [Alembic](https://alembic.sqlalchemy.org/) for versioned database schema changes.
+
+### Setup
+
+Alembic is already configured in this project:
+- `alembic.ini` - Configuration (database URL, logging)
+- `alembic/` - Migrations directory
+- `alembic/versions/` - Migration scripts
+
+### Common Commands
+
+```bash
+# Check current migration state
+alembic current
+
+# View migration history
+alembic history
+
+# Create a new migration
+alembic revision -m "add_new_column"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Rollback last migration
+alembic downgrade -1
+
+# Rollback to specific revision
+alembic downgrade 92f0657c25ef
+```
+
+### For Existing Databases
+
+If you have an existing database with the schema already created, stamp it to mark the initial migration as complete:
+
+```bash
+alembic stamp 92f0657c25ef
+```
+
+### For Fresh Databases
+
+Run all migrations to create the schema:
+
+```bash
+alembic upgrade head
+```
+
+### Creating New Migrations
+
+1. Make changes to the schema
+2. Create a migration:
+   ```bash
+   alembic revision -m "descriptive_name"
+   ```
+3. Edit the generated file in `alembic/versions/`
+4. Test the upgrade and downgrade
+5. Commit the migration file
+
+### Environment Variable Override
+
+You can override the database URL with:
+```bash
+DATABASE_URL=postgresql://user:pass@host:port/db alembic upgrade head
 ```
 
 ---
