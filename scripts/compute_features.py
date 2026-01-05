@@ -187,7 +187,7 @@ async def store_features_batch(
                 people_score, temporal_score, service_score,
                 relationship_score, overall_priority,
                 -- Embeddings
-                feature_vector, feature_dim, embedding_model, embedding_dim,
+                feature_vector, embedding_model, embedding_dim,
                 -- Metadata
                 computed_at, feature_version
             ) VALUES (
@@ -197,8 +197,8 @@ async def store_features_batch(
                 $20, $21, $22, $23, $24, $25,
                 $26, $27,
                 $28, $29, $30, $31, $32, $33, $34, $35,
-                $36, $37, $38, $39,
-                $40, $41
+                $36, $37, $38,
+                $39, $40
             )
             ON CONFLICT (email_id) DO UPDATE SET
                 sender_response_deviation = EXCLUDED.sender_response_deviation,
@@ -235,7 +235,6 @@ async def store_features_batch(
                 relationship_score = EXCLUDED.relationship_score,
                 overall_priority = EXCLUDED.overall_priority,
                 feature_vector = EXCLUDED.feature_vector,
-                feature_dim = EXCLUDED.feature_dim,
                 embedding_model = EXCLUDED.embedding_model,
                 embedding_dim = EXCLUDED.embedding_dim,
                 computed_at = EXCLUDED.computed_at,
@@ -257,7 +256,7 @@ async def store_features_batch(
                 d['project_score'], d['topic_score'], d['task_score'],
                 d['people_score'], d['temporal_score'], d['service_score'],
                 d['relationship_score'], d['overall_priority'],
-                d['feature_vector'], d['feature_dim'], d['embedding_model'], d['embedding_dim'],
+                d['feature_vector'], d['embedding_model'], d['embedding_dim'],
                 d['computed_at'], d['feature_version'],
             )
             for d in features_data
@@ -341,7 +340,6 @@ def extract_features_for_email(
         'overall_priority': combined.overall_priority,
         # Feature vector
         'feature_vector': feature_vec,
-        'feature_dim': FEATURE_DIMS['total_base'],  # Base feature dimension
         'embedding_model': None,  # Content embeddings not computed
         'embedding_dim': FEATURE_DIMS['total_base'],
         # Metadata
