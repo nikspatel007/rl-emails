@@ -44,27 +44,34 @@ Process your Gmail export and start labeling:
 
 ```bash
 # 1. Setup environment
-python -m venv .venv
+uv venv
 source .venv/bin/activate
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
-# 2. Start PostgreSQL
-docker compose up -d postgres
-# Or: ./scripts/start_db.sh
+# 2. Start PostgreSQL with pgvector
+docker run -d \
+  --name pl-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=rl_emails \
+  -p 5433:5432 \
+  pgvector/pgvector:pg16
 
-# 3. Set OpenAI API key (optional, for embeddings)
-export OPENAI_API_KEY="sk-..."
+# 3. Set API keys
+export OPENAI_API_KEY="sk-..."           # For embeddings
+export ANTHROPIC_API_KEY="sk-ant-..."    # For task extraction
 
 # 4. Run the pipeline on your Gmail export
-python run_pipeline.py /path/to/your-gmail.mbox
+uv run python run_pipeline.py /path/to/your-gmail.mbox
 
 # 5. Start the labeling UI
-streamlit run apps/labeling_ui.py
+uv run streamlit run apps/labeling_ui.py
 ```
 
 The pipeline will:
 - Parse your MBOX file
 - Import to PostgreSQL
+- Generate embeddings (OpenAI)
+- Extract tasks and urgency (Claude Haiku)
 - Discover projects from labels and participant patterns
 - Cluster emails by semantic similarity
 - Detect high-engagement periods
@@ -75,19 +82,19 @@ See [PIPELINE.md](./PIPELINE.md) for detailed documentation.
 
 ```bash
 # 1. Setup environment
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # 2. Download Enron dataset
 ./scripts/download_enron.sh
 
 # 3. Preprocess emails
-python src/preprocess.py
+uv run python src/preprocess.py
 
 # 4. Run full training pipeline
-python src/train_full_pipeline.py --target_accuracy 0.95
+uv run python src/train_full_pipeline.py --target_accuracy 0.95
 
 # 5. Evaluate
-python src/evaluate.py
+uv run python src/evaluate.py
 ```
 
 ## Documentation
@@ -124,8 +131,8 @@ brew install surrealdb/tap/surreal
 ./scripts/init_surreal.sh gmail      # Apply schema to Gmail
 
 # Import data
-python -m db.import_data enron data/train.json data/val.json data/test.json
-python -m db.import_data gmail data/gmail_emails.json
+uv run python -m db.import_data enron data/train.json data/val.json data/test.json
+uv run python -m db.import_data gmail data/gmail_emails.json
 
 # Connect to query data
 surreal sql --endpoint http://127.0.0.1:8000 --user root --pass root --ns email --db enron
@@ -147,21 +154,29 @@ Benefits:
 rl-emails/
 ├── README.md
 ├── requirements.txt
+├── PIPELINE.md            # Gmail pipeline documentation
+├── run_pipeline.py        # Pipeline orchestrator
 ├── docs/                  # Documentation
-├── scripts/               # Setup scripts
-│   ├── download_enron.sh  # Download Enron dataset
-│   ├── start_surreal.sh   # Start SurrealDB server
-│   └── init_surreal.sh    # Initialize database schema
+├── scripts/               # Pipeline and setup scripts
+│   ├── parse_mbox.py
+│   ├── import_to_postgres.py
+│   ├── generate_embeddings.py
+│   ├── extract_llm_features.py
+│   ├── mine_gmail_labels.py
+│   ├── cluster_embeddings.py
+│   └── ...
+├── apps/                  # Web applications
+│   └── labeling_ui.py     # Streamlit labeling interface
 ├── src/                   # Source code
 │   ├── preprocess.py
 │   ├── train.py
 │   ├── train_full_pipeline.py
 │   └── evaluate.py
 ├── db/                    # SurrealDB integration
-│   ├── schema.surql       # Database schema
-│   ├── import_data.py     # Data import script
-│   ├── dataset.py         # PyTorch Dataset
-│   └── benchmark.py       # Performance comparison
+│   ├── schema.surql
+│   ├── import_data.py
+│   ├── dataset.py
+│   └── benchmark.py
 ├── data/                  # Dataset (after download)
 ├── models/                # Downloaded LLMs
 └── checkpoints/           # Training checkpoints

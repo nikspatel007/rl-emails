@@ -2,55 +2,101 @@
 
 This document describes how to run the complete email analysis pipeline from a Gmail MBOX export.
 
+## Pipeline Flow
+
+```
+Gmail MBOX
+    ↓
+[1] Parse MBOX → JSONL
+    ↓
+[2] Import to PostgreSQL (raw_emails, emails)
+    ↓
+[3] Populate Threads (thread relationships)
+    ↓
+[4] Generate Embeddings (OpenAI text-embedding-3-small) ← OPENAI_API_KEY
+    ↓
+[5] Extract LLM Features (Claude Haiku task extraction) ← ANTHROPIC_API_KEY
+    ↓
+[6] Mine Gmail Labels → projects
+    ↓
+[7] Discover Participant Projects → projects
+    ↓
+[8] Cluster Embeddings (KMeans) → projects
+    ↓
+[9] Dedupe Projects (merge duplicates)
+    ↓
+[10] Detect Priority Contexts (response time analysis)
+    ↓
+Labeling UI (Streamlit)
+```
+
 ## Prerequisites
 
 ### 1. PostgreSQL with pgvector
 
-Start the database:
+Start the database with Docker:
 
 ```bash
+# Using docker-compose
 docker compose up -d postgres
-# Or use the helper script:
-./scripts/start_db.sh
+
+# Or manually:
+docker run -d \
+  --name pl-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=rl_emails \
+  -p 5433:5432 \
+  pgvector/pgvector:pg16
 ```
 
 The database should be accessible at `localhost:5433` with credentials `postgres:postgres`.
 
+**Tables are created automatically** by the pipeline scripts on first run.
+
 ### 2. Python Environment
 
 ```bash
-# Create virtual environment
-python -m venv .venv
+# Create virtual environment with uv
+uv venv
 source .venv/bin/activate
 
 # Install dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
-### 3. OpenAI API Key (Optional)
+### 3. API Keys (Required)
 
-For embedding generation, set your OpenAI API key:
+The pipeline requires two API keys:
 
 ```bash
+# OpenAI - for embedding generation (text-embedding-3-small, 1536 dims)
 export OPENAI_API_KEY="sk-..."
+
+# Anthropic - for task extraction with Claude Haiku
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-If not set, the pipeline will skip embedding-based features.
+| API Key | Used For | Stage |
+|---------|----------|-------|
+| `OPENAI_API_KEY` | Embeddings (text-embedding-3-small) | Stage 4 |
+| `ANTHROPIC_API_KEY` | Task extraction (Claude Haiku) | Stage 5 |
+
+Without these keys, the respective stages will be skipped.
 
 ## Quick Start
 
 ```bash
 # Run the complete pipeline
-python run_pipeline.py /path/to/your.mbox
+uv run python run_pipeline.py /path/to/your.mbox
 
 # With custom data directory
-python run_pipeline.py /path/to/your.mbox --data-dir ./my_data
+uv run python run_pipeline.py /path/to/your.mbox --data-dir ./my_data
 
 # Skip embedding generation (if no OpenAI key)
-python run_pipeline.py /path/to/your.mbox --skip-embeddings
+uv run python run_pipeline.py /path/to/your.mbox --skip-embeddings
 
 # Resume from a specific step (if pipeline failed)
-python run_pipeline.py /path/to/your.mbox --start-from 5
+uv run python run_pipeline.py /path/to/your.mbox --start-from 5
 ```
 
 ## Pipeline Stages
@@ -64,7 +110,7 @@ Parses the Gmail MBOX export into a normalized JSONL format.
 
 ```bash
 # Manual run with custom paths
-python scripts/parse_mbox.py \
+uv run python scripts/parse_mbox.py \
     --mbox /path/to/your.mbox \
     --output ./data/gmail/parsed_emails.jsonl
 ```
@@ -79,7 +125,7 @@ Imports parsed emails into PostgreSQL tables:
 **Output:** Database tables populated
 
 ```bash
-python scripts/import_to_postgres.py \
+uv run python scripts/import_to_postgres.py \
     --input ./data/gmail/parsed_emails.jsonl
 ```
 
@@ -91,7 +137,7 @@ Builds thread relationships using In-Reply-To and References headers.
 **Output:** `threads` table, email `thread_id` populated
 
 ```bash
-python scripts/populate_threads.py
+uv run python scripts/populate_threads.py
 ```
 
 ### Stage 4: Generate Embeddings (`scripts/generate_embeddings.py`)
@@ -103,10 +149,22 @@ Creates OpenAI embeddings (text-embedding-3-small, 1536 dims) for semantic searc
 **Output:** `email_embeddings` table with pgvector
 
 ```bash
-python scripts/generate_embeddings.py
+uv run python scripts/generate_embeddings.py
 ```
 
-### Stage 5: Mine Gmail Labels (`scripts/mine_gmail_labels.py`)
+### Stage 5: Extract LLM Features (`scripts/extract_llm_features.py`)
+
+Uses Claude Haiku to extract tasks, urgency, and topic classification from emails.
+
+**Requires:** `ANTHROPIC_API_KEY` environment variable
+**Input:** Emails in database
+**Output:** `email_llm_features` table with tasks (JSONB), urgency scores, topic categories
+
+```bash
+uv run python scripts/extract_llm_features.py
+```
+
+### Stage 6: Mine Gmail Labels (`scripts/mine_gmail_labels.py`)
 
 Extracts projects from Gmail labels (user-created and Superhuman AI labels).
 
@@ -114,10 +172,10 @@ Extracts projects from Gmail labels (user-created and Superhuman AI labels).
 **Output:** Projects in `projects` table with `source='gmail_label'`
 
 ```bash
-python scripts/mine_gmail_labels.py [--dry-run]
+uv run python scripts/mine_gmail_labels.py [--dry-run]
 ```
 
-### Stage 6: Discover Participant Projects (`scripts/discover_participant_projects.py`)
+### Stage 7: Discover Participant Projects (`scripts/discover_participant_projects.py`)
 
 Finds recurring participant groups (people who email together frequently).
 
@@ -125,10 +183,10 @@ Finds recurring participant groups (people who email together frequently).
 **Output:** Projects in `projects` table with `source='participant'`
 
 ```bash
-python scripts/discover_participant_projects.py [--dry-run] [--min-emails 5]
+uv run python scripts/discover_participant_projects.py [--dry-run] [--min-emails 5]
 ```
 
-### Stage 7: Cluster Embeddings (`scripts/cluster_embeddings.py`)
+### Stage 8: Cluster Embeddings (`scripts/cluster_embeddings.py`)
 
 Clusters emails by semantic similarity using KMeans on embeddings.
 
@@ -137,21 +195,21 @@ Clusters emails by semantic similarity using KMeans on embeddings.
 **Output:** Projects in `projects` table with `source='cluster'`
 
 ```bash
-python scripts/cluster_embeddings.py [--n-clusters 30] [--dry-run]
+uv run python scripts/cluster_embeddings.py [--n-clusters 30] [--dry-run]
 ```
 
-### Stage 8: Dedupe Projects (`scripts/dedupe_projects.py`)
+### Stage 9: Dedupe Projects (`scripts/dedupe_projects.py`)
 
 Merges duplicate projects based on participant overlap and name similarity.
 
-**Input:** Projects from Stages 5-7
+**Input:** Projects from Stages 6-8
 **Output:** `merged_into` field set on duplicate projects
 
 ```bash
-python scripts/dedupe_projects.py [--dry-run]
+uv run python scripts/dedupe_projects.py [--dry-run]
 ```
 
-### Stage 9: Detect Priority Contexts (`scripts/detect_priority_contexts.py`)
+### Stage 10: Detect Priority Contexts (`scripts/detect_priority_contexts.py`)
 
 Analyzes response times to find periods of heightened engagement.
 
@@ -159,7 +217,7 @@ Analyzes response times to find periods of heightened engagement.
 **Output:** `priority_contexts` table populated
 
 ```bash
-python scripts/detect_priority_contexts.py [--dry-run]
+uv run python scripts/detect_priority_contexts.py [--dry-run]
 ```
 
 ## Post-Pipeline: Labeling UI
@@ -167,7 +225,7 @@ python scripts/detect_priority_contexts.py [--dry-run]
 After the pipeline completes, start the labeling UI to manually classify tasks:
 
 ```bash
-streamlit run apps/labeling_ui.py
+uv run streamlit run apps/labeling_ui.py
 ```
 
 The UI allows you to:
@@ -187,6 +245,7 @@ Key tables created by the pipeline:
 | `emails` | Enriched email data with indexes |
 | `threads` | Conversation threading |
 | `email_embeddings` | OpenAI embeddings (pgvector) |
+| `email_llm_features` | LLM-extracted tasks, urgency, topics |
 | `projects` | Discovered projects/topics |
 | `email_project_links` | Email-to-project associations |
 | `priority_contexts` | Detected high-engagement periods |
@@ -200,7 +259,8 @@ The pipeline uses these default settings:
 |---------|---------|-------------|
 | `DB_URL` | `postgresql://postgres:postgres@localhost:5433/rl_emails` | Database connection |
 | `BATCH_SIZE` | 1000 | Records per database batch |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI model |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
+| `LLM_MODEL` | `claude-3-haiku-20240307` | Anthropic task extraction model |
 | `N_CLUSTERS` | 30 | Number of semantic clusters |
 | `MIN_EMAILS_PER_PROJECT` | 3 | Minimum emails for a participant project |
 
@@ -215,7 +275,7 @@ Override via environment variables or script arguments.
 docker ps | grep postgres
 
 # Check connection
-psql -h localhost -p 5433 -U postgres -d rl_emails -c "SELECT 1"
+docker exec pl-postgres psql -U postgres -d rl_emails -c "SELECT 1"
 ```
 
 ### Out of memory during embedding generation
@@ -223,7 +283,7 @@ psql -h localhost -p 5433 -U postgres -d rl_emails -c "SELECT 1"
 Reduce batch size:
 
 ```bash
-python scripts/generate_embeddings.py --batch-size 50
+uv run python scripts/generate_embeddings.py --batch-size 50
 ```
 
 ### Pipeline failed mid-run
@@ -231,7 +291,7 @@ python scripts/generate_embeddings.py --batch-size 50
 Resume from the failed step:
 
 ```bash
-python run_pipeline.py /path/to/your.mbox --start-from 5
+uv run python run_pipeline.py /path/to/your.mbox --start-from 5
 ```
 
 ### No embeddings / clustering skipped
@@ -240,7 +300,16 @@ Ensure `OPENAI_API_KEY` is set:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
-python run_pipeline.py /path/to/your.mbox
+uv run python run_pipeline.py /path/to/your.mbox
+```
+
+### No task extraction
+
+Ensure `ANTHROPIC_API_KEY` is set:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+uv run python run_pipeline.py /path/to/your.mbox
 ```
 
 ## Development
@@ -252,7 +321,7 @@ To run individual scripts during development:
 source .venv/bin/activate
 
 # Run any script
-python scripts/mine_gmail_labels.py --dry-run
+uv run python scripts/mine_gmail_labels.py --dry-run
 ```
 
 ## License
