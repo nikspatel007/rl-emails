@@ -38,12 +38,43 @@ Emails are scored across multiple dimensions:
 - Supports running 70B+ parameter models locally
 - Uses MPS (Metal Performance Shaders) and MLX for acceleration
 
-## Quick Start
+## Quick Start: Your Own Emails
+
+Process your Gmail export and start labeling:
 
 ```bash
 # 1. Setup environment
-conda create -n email-rl python=3.11
-conda activate email-rl
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Start PostgreSQL
+docker compose up -d postgres
+# Or: ./scripts/start_db.sh
+
+# 3. Set OpenAI API key (optional, for embeddings)
+export OPENAI_API_KEY="sk-..."
+
+# 4. Run the pipeline on your Gmail export
+python run_pipeline.py /path/to/your-gmail.mbox
+
+# 5. Start the labeling UI
+streamlit run apps/labeling_ui.py
+```
+
+The pipeline will:
+- Parse your MBOX file
+- Import to PostgreSQL
+- Discover projects from labels and participant patterns
+- Cluster emails by semantic similarity
+- Detect high-engagement periods
+
+See [PIPELINE.md](./PIPELINE.md) for detailed documentation.
+
+## Quick Start: Enron Dataset (Research)
+
+```bash
+# 1. Setup environment
 pip install -r requirements.txt
 
 # 2. Download Enron dataset
