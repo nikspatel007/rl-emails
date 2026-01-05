@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """
-Task Labeling UI v2 - Human Verification Workflow
+Task Labeling UI v2 - Action-First Workflow
 
-A redesigned Streamlit app for efficient human verification of AI-extracted data.
+A redesigned Streamlit app with action-first email triage.
 
-Features:
-- 3-column layout: LLM Extracted | AI Predicted | Human Verified
-- One-click "All Correct" for quick approval
-- Keyboard shortcuts: j/k navigate, y=correct, n=needs fix
-- Progress tracker with AI accuracy %
-- Collapsible email content
-- Confidence-based filtering
+Flow:
+1. See email → What's my action? (Delete / Archive / Act On)
+2. Delete/Archive: Save + move to next (no task verification)
+3. Act On: Expand task panel with sub-actions and verification
 
 Usage:
     streamlit run apps/labeling_ui_v2.py
@@ -20,116 +17,125 @@ import streamlit as st
 import psycopg2
 import psycopg2.extras
 from datetime import datetime
-import json
 
 # Configuration
 DB_URL = "postgresql://postgres:postgres@localhost:5433/rl_emails"
 
-# Labeling options
-TRIAGE_CATEGORIES = [
-    ("fyi", "FYI - Info only"),
-    ("quick_win", "Quick Win - <2 min"),
-    ("ai_doable", "AI Doable"),
-    ("human_high_value", "Human Required"),
-    ("waiting", "Waiting/Blocked"),
+# Action types for quick triage
+PRIMARY_ACTIONS = {
+    "delete": {"label": "Delete", "icon": "🗑️", "color": "green", "desc": "Trash, promotional, spam"},
+    "archive": {"label": "Archive", "icon": "📁", "color": "blue", "desc": "Reference only, no action needed"},
+    "act_on": {"label": "Act On", "icon": "⚡", "color": "orange", "desc": "Needs work - expand to see tasks"},
+}
+
+# Sub-actions when "Act On" is selected
+ACT_ON_SUBACTIONS = [
+    ("reply_now", "Reply Now", "Respond immediately"),
+    ("reply_later", "Reply Later", "Queue for later response"),
+    ("forward", "Forward", "Delegate to someone else"),
+    ("create_task", "Create Task", "Add to task list"),
+    ("snooze", "Snooze", "Remind me later"),
 ]
 
-RELEVANCY_OPTIONS = [
-    ("high", "High - Core to project"),
-    ("medium", "Medium - Related"),
-    ("low", "Low - Tangential"),
-    ("none", "None - Wrong association"),
-]
-
+# Extraction quality for task verification
 EXTRACTION_QUALITY = [
-    ("good", "Good - Correctly extracted"),
-    ("partial", "Partial - Missing context"),
-    ("wrong", "Wrong - Not a real task"),
+    ("good", "Correct"),
+    ("partial", "Partial"),
+    ("wrong", "Wrong"),
 ]
 
-# Custom CSS for better styling
+# Custom CSS for big action buttons
 CUSTOM_CSS = """
 <style>
     .stApp {
         max-width: 1400px;
         margin: 0 auto;
     }
-    .verification-column {
-        background-color: #f0f7ff;
-        border-radius: 8px;
-        padding: 1rem;
-        border: 2px solid #4a90d9;
+
+    /* Big action button styling */
+    .action-btn-delete button {
+        background-color: #22c55e !important;
+        color: white !important;
+        font-size: 1.2rem !important;
+        padding: 1rem 2rem !important;
+        height: auto !important;
+        min-height: 80px !important;
     }
-    .llm-column {
-        background-color: #fff7e6;
-        border-radius: 8px;
-        padding: 1rem;
-        border: 1px solid #d9a441;
+    .action-btn-archive button {
+        background-color: #3b82f6 !important;
+        color: white !important;
+        font-size: 1.2rem !important;
+        padding: 1rem 2rem !important;
+        height: auto !important;
+        min-height: 80px !important;
     }
-    .ai-column {
-        background-color: #f0fff4;
-        border-radius: 8px;
-        padding: 1rem;
-        border: 1px solid #48bb78;
+    .action-btn-act button {
+        background-color: #f97316 !important;
+        color: white !important;
+        font-size: 1.2rem !important;
+        padding: 1rem 2rem !important;
+        height: auto !important;
+        min-height: 80px !important;
     }
+
+    /* Task panel styling */
+    .task-panel {
+        background-color: #fff7ed;
+        border: 2px solid #f97316;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    /* Email header */
     .email-header {
         background-color: #f8f9fa;
         border-radius: 8px;
         padding: 1rem;
         margin-bottom: 1rem;
     }
-    .task-card {
-        background-color: white;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
+
+    /* Progress colors */
     .accuracy-high { color: #22c55e; font-weight: bold; }
     .accuracy-medium { color: #f59e0b; font-weight: bold; }
     .accuracy-low { color: #ef4444; font-weight: bold; }
-    .shortcut-hint {
-        font-size: 0.75rem;
-        color: #666;
-        background-color: #f0f0f0;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-left: 4px;
-    }
-    div[data-testid="stExpander"] {
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
+
+    /* Subaction buttons */
+    .subaction-selected {
+        border: 3px solid #f97316 !important;
+        background-color: #fff7ed !important;
     }
 </style>
 """
 
-# JavaScript for keyboard shortcuts
+# Keyboard shortcuts
 KEYBOARD_JS = """
 <script>
 document.addEventListener('keydown', function(e) {
-    // Only trigger if not in an input field
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
     const key = e.key.toLowerCase();
 
-    if (key === 'j') {
-        // Next email
-        const nextBtn = document.querySelector('[data-testid="next-button"]') ||
-                       Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Next'));
-        if (nextBtn) nextBtn.click();
+    if (key === 'd') {
+        // Delete
+        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Delete'));
+        if (btn) btn.click();
+    } else if (key === 'a') {
+        // Archive
+        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Archive'));
+        if (btn) btn.click();
+    } else if (key === 'e') {
+        // Act on (execute)
+        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Act On'));
+        if (btn) btn.click();
+    } else if (key === 'j') {
+        // Next
+        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Next'));
+        if (btn) btn.click();
     } else if (key === 'k') {
-        // Previous email
-        const prevBtn = document.querySelector('[data-testid="prev-button"]') ||
-                       Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Previous'));
-        if (prevBtn) prevBtn.click();
-    } else if (key === 'y') {
-        // Approve all
-        const approveBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('All Correct'));
-        if (approveBtn) approveBtn.click();
-    } else if (key === 'n') {
-        // Needs fix - expand verification section
-        const expanders = document.querySelectorAll('[data-testid="stExpander"]');
-        if (expanders.length > 0) expanders[0].click();
+        // Previous
+        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Previous'));
+        if (btn) btn.click();
     }
 });
 </script>
@@ -143,14 +149,14 @@ def get_connection():
 
 def get_emails_for_verification(conn, limit=50, offset=0, unlabeled_only=True,
                                  confidence_filter=None, sort_by='date'):
-    """Get emails with LLM features and AI predictions for verification."""
+    """Get emails with LLM features for verification."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        where_clauses = ["llm.tasks IS NOT NULL", "jsonb_array_length(llm.tasks) > 0"]
+        where_clauses = ["e.body_text IS NOT NULL"]
 
         if unlabeled_only:
             where_clauses.append("""
                 NOT EXISTS (
-                    SELECT 1 FROM human_task_labels htl WHERE htl.email_id = e.id
+                    SELECT 1 FROM email_actions ea WHERE ea.email_id = e.id
                 )
             """)
 
@@ -173,15 +179,14 @@ def get_emails_for_verification(conn, limit=50, offset=0, unlabeled_only=True,
             SELECT DISTINCT
                 e.id, e.message_id, e.subject, e.from_email, e.from_name,
                 e.date_parsed, e.body_text, e.body_preview, e.thread_id,
-                llm.tasks, llm.overall_urgency, llm.topic_category,
-                llm.summary,
+                COALESCE(llm.tasks, '[]'::jsonb) as tasks,
+                llm.overall_urgency, llm.topic_category, llm.summary,
                 ef.overall_priority as ai_priority,
                 ef.task_score as ai_task_score,
                 ef.urgency_score as ai_urgency,
-                ef.project_score as ai_project_score,
                 ef.is_service_email as ai_is_service
             FROM emails e
-            JOIN email_llm_features llm ON llm.email_id = e.message_id
+            LEFT JOIN email_llm_features llm ON llm.email_id = e.message_id
             LEFT JOIN email_features ef ON ef.email_id = e.id
             WHERE {where_sql}
             ORDER BY {order_sql}
@@ -219,137 +224,129 @@ def get_all_projects(conn):
 
 
 def get_labeling_stats(conn):
-    """Get comprehensive labeling statistics."""
+    """Get labeling statistics."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        # Basic stats
+        # Action stats
         cur.execute("""
             SELECT
-                COUNT(*) as total_labels,
+                COUNT(*) as total_actions,
                 COUNT(DISTINCT email_id) as emails_labeled,
-                COUNT(DISTINCT labeler) as labelers
-            FROM human_task_labels
+                COUNT(*) FILTER (WHERE action = 'delete') as deletes,
+                COUNT(*) FILTER (WHERE action = 'archive') as archives,
+                COUNT(*) FILTER (WHERE action = 'act_on') as act_ons
+            FROM email_actions
         """)
-        basic = cur.fetchone()
-
-        # AI accuracy (when human agrees with AI)
-        cur.execute("""
-            SELECT
-                COUNT(*) FILTER (WHERE extraction_quality = 'good') as good_extractions,
-                COUNT(*) as total_extractions
-            FROM human_task_labels
-        """)
-        accuracy = cur.fetchone()
+        actions = cur.fetchone() or {
+            'total_actions': 0, 'emails_labeled': 0,
+            'deletes': 0, 'archives': 0, 'act_ons': 0
+        }
 
         # Pending count
         cur.execute("""
-            SELECT COUNT(DISTINCT e.id) as pending
+            SELECT COUNT(*) as pending
             FROM emails e
-            JOIN email_llm_features llm ON llm.email_id = e.message_id
-            WHERE llm.tasks IS NOT NULL
-              AND jsonb_array_length(llm.tasks) > 0
+            WHERE e.body_text IS NOT NULL
               AND NOT EXISTS (
-                  SELECT 1 FROM human_task_labels htl WHERE htl.email_id = e.id
+                  SELECT 1 FROM email_actions ea WHERE ea.email_id = e.id
               )
         """)
         pending = cur.fetchone()
 
         return {
-            **basic,
-            'ai_accuracy': (accuracy['good_extractions'] / accuracy['total_extractions'] * 100)
-                          if accuracy['total_extractions'] > 0 else 0,
-            'pending': pending['pending']
+            **actions,
+            'pending': pending['pending'] if pending else 0
         }
 
 
-def save_task_label(conn, email_id: int, task_index: int, task_description: str,
-                    project_id: int, project_relevancy: str, triage_category: str,
-                    extraction_quality: str, notes: str, labeler: str,
-                    ai_agreed: bool = True):
-    """Save a task label to the database."""
+def save_email_action(conn, email_id: int, action: str, sub_action: str = None,
+                      project_id: int = None, notes: str = None, labeler: str = "anonymous"):
+    """Save primary email action (delete/archive/act_on)."""
     with conn.cursor() as cur:
+        # Create table if not exists (for first run)
         cur.execute("""
-            INSERT INTO human_task_labels (
-                email_id, task_index, task_description, project_id,
-                project_relevancy, triage_category, extraction_quality,
-                notes, labeler, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-            ON CONFLICT DO NOTHING
+            CREATE TABLE IF NOT EXISTS email_actions (
+                id SERIAL PRIMARY KEY,
+                email_id INTEGER NOT NULL REFERENCES emails(id),
+                action VARCHAR(20) NOT NULL,
+                sub_action VARCHAR(30),
+                project_id INTEGER REFERENCES projects(id),
+                notes TEXT,
+                labeler VARCHAR(100),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                UNIQUE(email_id)
+            )
+        """)
+
+        cur.execute("""
+            INSERT INTO email_actions (email_id, action, sub_action, project_id, notes, labeler)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (email_id) DO UPDATE SET
+                action = EXCLUDED.action,
+                sub_action = EXCLUDED.sub_action,
+                project_id = EXCLUDED.project_id,
+                notes = EXCLUDED.notes,
+                labeler = EXCLUDED.labeler,
+                created_at = NOW()
             RETURNING id
-        """, (email_id, task_index, task_description, project_id,
-              project_relevancy, triage_category, extraction_quality,
-              notes, labeler))
+        """, (email_id, action, sub_action, project_id, notes, labeler))
         conn.commit()
         result = cur.fetchone()
         return result[0] if result else None
 
 
-def save_all_tasks_approved(conn, email_id: int, tasks: list, project_id: int,
-                            labeler: str):
-    """Save all tasks for an email as approved (AI was correct)."""
-    saved_count = 0
-    for idx, task in enumerate(tasks):
-        label_id = save_task_label(
-            conn,
-            email_id=email_id,
-            task_index=idx,
-            task_description=task.get('description', ''),
-            project_id=project_id,
-            project_relevancy='high',
-            triage_category=task.get('task_type', 'quick_win'),
-            extraction_quality='good',
-            notes='Quick approved - AI correct',
-            labeler=labeler,
-            ai_agreed=True
-        )
-        if label_id:
-            saved_count += 1
-    return saved_count
-
-
-def update_email_project_link(conn, email_id: int, project_id: int, confidence: float = 1.0):
-    """Update or create email-project link."""
+def save_task_verification(conn, email_id: int, task_index: int,
+                           extraction_quality: str, labeler: str):
+    """Save task verification for act_on emails."""
     with conn.cursor() as cur:
         cur.execute("""
-            INSERT INTO email_project_links (email_id, project_id, confidence, source)
-            VALUES (%s, %s, %s, 'human')
-            ON CONFLICT (email_id, project_id) DO UPDATE
-            SET confidence = GREATEST(email_project_links.confidence, EXCLUDED.confidence),
-                source = 'human'
-        """, (email_id, project_id, confidence))
+            INSERT INTO human_task_labels (
+                email_id, task_index, task_description,
+                extraction_quality, labeler, created_at
+            ) VALUES (%s, %s, '', %s, %s, NOW())
+            ON CONFLICT DO NOTHING
+            RETURNING id
+        """, (email_id, task_index, extraction_quality, labeler))
         conn.commit()
+        return cur.fetchone()
 
 
-def render_task_column(task: dict, column_type: str, task_idx: int, email_id: int):
-    """Render a task in a specific column format."""
-    desc = task.get('description', 'No description')
-    urgency = task.get('urgency', 0)
-    task_type = task.get('task_type', 'unknown')
-
-    if column_type == 'llm':
-        st.markdown(f"**{desc}**")
-        st.caption(f"Type: {task_type} | Urgency: {int(urgency * 100)}%")
-    elif column_type == 'ai':
-        st.markdown(f"*{desc}*")
-        st.caption(f"Predicted: {task_type}")
+def advance_to_next(emails):
+    """Move to next email."""
+    if st.session_state.current_idx < len(emails) - 1:
+        st.session_state.current_idx += 1
     else:
-        st.markdown(f"_{desc}_")
+        st.session_state.page += 1
+        st.session_state.current_idx = 0
+    # Clear act_on state
+    st.session_state.show_act_panel = False
+    st.session_state.selected_subaction = None
 
 
 def main():
     st.set_page_config(
-        page_title="Labeling UI v2",
-        page_icon="✓",
+        page_title="Email Triage",
+        page_icon="📧",
         layout="wide"
     )
 
-    # Inject custom CSS and keyboard shortcuts
+    # Inject CSS and JS
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     st.components.v1.html(KEYBOARD_JS, height=0)
 
-    st.title("✓ Human Verification Workflow")
-    st.caption("Keyboard: **j/k** navigate | **y** approve all | **n** needs fix")
+    st.title("📧 Email Triage")
+    st.caption("**Shortcuts:** d=Delete | a=Archive | e=Act | j/k=Navigate")
 
-    # Sidebar settings
+    # Initialize session state
+    if 'current_idx' not in st.session_state:
+        st.session_state.current_idx = 0
+    if 'page' not in st.session_state:
+        st.session_state.page = 0
+    if 'show_act_panel' not in st.session_state:
+        st.session_state.show_act_panel = False
+    if 'selected_subaction' not in st.session_state:
+        st.session_state.selected_subaction = None
+
+    # Sidebar
     with st.sidebar:
         st.header("Settings")
         labeler = st.text_input("Your name", value="anonymous")
@@ -357,11 +354,11 @@ def main():
 
         st.subheader("Filters")
         confidence_filter = st.selectbox(
-            "Confidence level",
+            "AI Confidence",
             options=[None, 'low', 'medium', 'high'],
             format_func=lambda x: {
                 None: "All",
-                'low': "Low (<30%) - Review first",
+                'low': "Low (<30%)",
                 'medium': "Medium (30-70%)",
                 'high': "High (>70%)"
             }.get(x, x)
@@ -371,13 +368,13 @@ def main():
             "Sort by",
             options=['date', 'priority', 'confidence_asc'],
             format_func=lambda x: {
-                'date': "Date (newest first)",
-                'priority': "Priority (highest first)",
-                'confidence_asc': "Confidence (lowest first)"
+                'date': "Newest first",
+                'priority': "Highest priority",
+                'confidence_asc': "Lowest confidence"
             }.get(x, x)
         )
 
-        page_size = st.slider("Emails per page", 10, 100, 25)
+        page_size = st.slider("Per page", 10, 100, 25)
 
         st.divider()
         st.header("Progress")
@@ -386,20 +383,16 @@ def main():
             conn = get_connection()
             stats = get_labeling_stats(conn)
 
-            # Progress metrics
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Labeled", stats['emails_labeled'])
+                st.metric("Done", stats['emails_labeled'])
             with col2:
                 st.metric("Pending", stats['pending'])
 
-            # AI Accuracy with color coding
-            accuracy = stats['ai_accuracy']
-            accuracy_class = 'high' if accuracy >= 80 else ('medium' if accuracy >= 60 else 'low')
-            st.markdown(f"**AI Accuracy:** <span class='accuracy-{accuracy_class}'>{accuracy:.1f}%</span>",
-                       unsafe_allow_html=True)
+            # Action breakdown
+            if stats['emails_labeled'] > 0:
+                st.caption(f"🗑️ {stats['deletes']} | 📁 {stats['archives']} | ⚡ {stats['act_ons']}")
 
-            # Progress bar
             total = stats['emails_labeled'] + stats['pending']
             if total > 0:
                 progress = stats['emails_labeled'] / total
@@ -408,276 +401,205 @@ def main():
 
             conn.close()
         except Exception as e:
-            st.error(f"Stats error: {e}")
-
-    # Initialize session state
-    if 'current_idx' not in st.session_state:
-        st.session_state.current_idx = 0
-    if 'page' not in st.session_state:
-        st.session_state.page = 0
+            st.warning(f"Stats unavailable: {e}")
 
     # Main content
     try:
         conn = get_connection()
 
-        # Get emails
         offset = st.session_state.page * page_size
         emails = get_emails_for_verification(
-            conn,
-            limit=page_size,
-            offset=offset,
+            conn, limit=page_size, offset=offset,
             unlabeled_only=unlabeled_only,
             confidence_filter=confidence_filter,
             sort_by=sort_by
         )
 
         if not emails:
-            st.success("All caught up! No emails to verify.")
+            st.success("🎉 All caught up! No emails to triage.")
             conn.close()
             return
 
-        # Ensure valid index
         if st.session_state.current_idx >= len(emails):
             st.session_state.current_idx = 0
 
         email = emails[st.session_state.current_idx]
 
-        # Navigation bar
-        nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1, 2, 2, 1])
-
-        with nav_col1:
-            if st.button("← Previous (k)", disabled=st.session_state.current_idx == 0,
-                        key="prev-button"):
+        # Navigation
+        nav1, nav2, nav3 = st.columns([1, 3, 1])
+        with nav1:
+            if st.button("← Previous (k)", disabled=st.session_state.current_idx == 0):
                 st.session_state.current_idx -= 1
+                st.session_state.show_act_panel = False
                 st.rerun()
-
-        with nav_col2:
-            st.markdown(f"**Email {st.session_state.current_idx + 1} of {len(emails)}**")
-
-        with nav_col3:
-            # Quick jump
-            new_idx = st.number_input("Go to #", min_value=1, max_value=len(emails),
-                                       value=st.session_state.current_idx + 1,
-                                       label_visibility="collapsed")
-            if new_idx - 1 != st.session_state.current_idx:
-                st.session_state.current_idx = new_idx - 1
-                st.rerun()
-
-        with nav_col4:
-            if st.button("Next (j) →", disabled=st.session_state.current_idx >= len(emails) - 1,
-                        key="next-button"):
+        with nav2:
+            st.markdown(f"### Email {st.session_state.current_idx + 1} of {len(emails)}")
+        with nav3:
+            if st.button("Next (j) →", disabled=st.session_state.current_idx >= len(emails) - 1):
                 st.session_state.current_idx += 1
+                st.session_state.show_act_panel = False
                 st.rerun()
 
         st.divider()
 
         # Email header
-        with st.container():
-            header_col1, header_col2 = st.columns([3, 1])
+        col_header, col_meta = st.columns([3, 1])
+        with col_header:
+            st.subheader(email['subject'] or "(No Subject)")
+            st.caption(f"**From:** {email['from_name'] or email['from_email']}")
+            if email['date_parsed']:
+                st.caption(f"**Date:** {email['date_parsed'].strftime('%Y-%m-%d %H:%M')}")
+        with col_meta:
+            if email['ai_priority'] is not None:
+                priority_pct = int(email['ai_priority'] * 100)
+                st.metric("AI Priority", f"{priority_pct}%")
+            if email['ai_is_service']:
+                st.info("📬 Service Email")
 
-            with header_col1:
-                st.subheader(email['subject'] or "(No Subject)")
-                st.caption(f"**From:** {email['from_name'] or email['from_email']}")
-                if email['date_parsed']:
-                    st.caption(f"**Date:** {email['date_parsed'].strftime('%Y-%m-%d %H:%M')}")
-
-            with header_col2:
-                # AI scores
-                if email['ai_priority'] is not None:
-                    st.metric("AI Priority", f"{int(email['ai_priority'] * 100)}%")
-                if email['ai_is_service']:
-                    st.warning("Service Email")
-
-        # Collapsible email content
-        with st.expander("📧 Email Content", expanded=False):
+        # Email content (collapsible)
+        with st.expander("📧 View Email Content", expanded=False):
             if email['summary']:
-                st.info(f"**AI Summary:** {email['summary']}")
+                st.info(f"**Summary:** {email['summary']}")
+            body = email['body_text'] or email['body_preview'] or "(No content)"
+            st.text(body[:2000] + ("..." if len(body) > 2000 else ""))
 
-            if email['body_text']:
-                # Show first 500 chars with option to expand
-                body = email['body_text']
-                if len(body) > 500:
-                    st.text(body[:500] + "...")
-                    if st.checkbox("Show full content", key=f"full_{email['id']}"):
-                        st.text(body)
-                else:
-                    st.text(body)
-            else:
-                st.text(email['body_preview'] or "(No content)")
-
-        st.divider()
-
-        # Get projects for this email
+        # Project selection (compact)
         projects = get_email_projects(conn, email['id'])
         all_projects = get_all_projects(conn)
 
-        # Project selection
-        st.subheader("Project Association")
-        proj_col1, proj_col2 = st.columns(2)
-
-        with proj_col1:
-            if projects:
-                st.caption("**Auto-detected:**")
-                for p in projects[:3]:
-                    conf = int(p['confidence'] * 100) if p['confidence'] else 0
-                    st.write(f"• {p['name']} ({conf}% conf)")
-            else:
-                st.caption("_No projects auto-detected_")
-
-        with proj_col2:
+        with st.expander("📂 Project", expanded=False):
             project_options = {0: "-- No project --"}
             project_options.update({p['id']: p['name'] for p in all_projects})
             default_project = projects[0]['id'] if projects else 0
 
             selected_project_id = st.selectbox(
-                "Confirm/select project:",
+                "Project:",
                 options=list(project_options.keys()),
                 format_func=lambda x: project_options[x],
                 index=list(project_options.keys()).index(default_project)
                       if default_project in project_options else 0,
-                key=f"proj_{email['id']}"
+                key=f"proj_{email['id']}",
+                label_visibility="collapsed"
             )
 
         st.divider()
 
-        # 3-Column Task Verification Layout
-        st.subheader("Task Verification")
+        # ============================================
+        # PRIMARY ACTION BUTTONS - Big and prominent
+        # ============================================
+        st.markdown("### What's your action?")
 
-        tasks = email['tasks'] or []
+        btn_col1, btn_col2, btn_col3 = st.columns(3)
 
-        if not tasks:
-            st.info("No tasks extracted from this email")
-        else:
-            # Column headers
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.markdown("### 🤖 LLM Extracted")
-                st.caption("What Haiku found")
-            with col2:
-                st.markdown("### 📊 AI Predicted")
-                st.caption("ML model scores")
-            with col3:
-                st.markdown("### ✓ Human Verified")
-                st.caption("Your confirmation")
+        with btn_col1:
+            st.markdown('<div class="action-btn-delete">', unsafe_allow_html=True)
+            if st.button("🗑️ DELETE\n\nTrash / Promo / Spam",
+                        key="btn_delete", use_container_width=True, type="primary"):
+                project_id = selected_project_id if selected_project_id > 0 else None
+                save_email_action(conn, email['id'], 'delete',
+                                 project_id=project_id, labeler=labeler)
+                advance_to_next(emails)
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-            # Quick approve button
+        with btn_col2:
+            st.markdown('<div class="action-btn-archive">', unsafe_allow_html=True)
+            if st.button("📁 ARCHIVE\n\nReference / FYI",
+                        key="btn_archive", use_container_width=True, type="secondary"):
+                project_id = selected_project_id if selected_project_id > 0 else None
+                save_email_action(conn, email['id'], 'archive',
+                                 project_id=project_id, labeler=labeler)
+                advance_to_next(emails)
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with btn_col3:
+            st.markdown('<div class="action-btn-act">', unsafe_allow_html=True)
+            if st.button("⚡ ACT ON\n\nNeeds Work",
+                        key="btn_act", use_container_width=True, type="secondary"):
+                st.session_state.show_act_panel = True
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # ============================================
+        # ACT ON PANEL - Only shown when Act On clicked
+        # ============================================
+        if st.session_state.show_act_panel:
+            st.divider()
+            st.markdown("### ⚡ Action Details")
+
+            # Sub-action selection
+            st.markdown("**What will you do?**")
+            subaction_cols = st.columns(len(ACT_ON_SUBACTIONS))
+
+            for i, (key, label, desc) in enumerate(ACT_ON_SUBACTIONS):
+                with subaction_cols[i]:
+                    is_selected = st.session_state.selected_subaction == key
+                    btn_type = "primary" if is_selected else "secondary"
+                    if st.button(f"{label}", key=f"sub_{key}",
+                                use_container_width=True, type=btn_type):
+                        st.session_state.selected_subaction = key
+                        st.rerun()
+                    st.caption(desc)
+
+            # Task verification (if tasks exist)
+            tasks = email['tasks'] or []
+            if tasks:
+                st.markdown("---")
+                st.markdown("**LLM-Extracted Tasks:**")
+
+                for idx, task in enumerate(tasks):
+                    task_col1, task_col2 = st.columns([3, 1])
+                    with task_col1:
+                        st.markdown(f"**{idx+1}.** {task.get('description', 'No description')}")
+                        urgency = int(task.get('urgency', 0) * 100)
+                        st.caption(f"Type: {task.get('task_type', 'unknown')} | Urgency: {urgency}%")
+                    with task_col2:
+                        quality = st.radio(
+                            "Quality",
+                            options=[q[0] for q in EXTRACTION_QUALITY],
+                            format_func=lambda x: next((q[1] for q in EXTRACTION_QUALITY if q[0] == x), x),
+                            key=f"qual_{email['id']}_{idx}",
+                            horizontal=True,
+                            label_visibility="collapsed"
+                        )
+
+            # Notes
+            notes = st.text_input("Notes (optional)", key=f"notes_{email['id']}")
+
+            # Save & Continue button
             st.markdown("---")
-            approve_col1, approve_col2, approve_col3 = st.columns([2, 1, 2])
-            with approve_col2:
-                if st.button("✓ All Correct (y)", type="primary", use_container_width=True):
+            save_col1, save_col2, save_col3 = st.columns([1, 2, 1])
+            with save_col2:
+                can_save = st.session_state.selected_subaction is not None
+                if st.button("✓ Save & Continue", type="primary",
+                            use_container_width=True, disabled=not can_save):
                     project_id = selected_project_id if selected_project_id > 0 else None
-                    saved = save_all_tasks_approved(conn, email['id'], tasks, project_id, labeler)
 
-                    if project_id:
-                        update_email_project_link(conn, email['id'], project_id)
+                    # Save action
+                    save_email_action(
+                        conn, email['id'], 'act_on',
+                        sub_action=st.session_state.selected_subaction,
+                        project_id=project_id,
+                        notes=notes,
+                        labeler=labeler
+                    )
 
-                    st.success(f"Saved {saved} task(s) as approved!")
+                    # Save task verifications
+                    for idx, task in enumerate(tasks):
+                        quality_key = f"qual_{email['id']}_{idx}"
+                        if quality_key in st.session_state:
+                            save_task_verification(
+                                conn, email['id'], idx,
+                                st.session_state[quality_key],
+                                labeler
+                            )
 
-                    # Move to next
-                    if st.session_state.current_idx < len(emails) - 1:
-                        st.session_state.current_idx += 1
+                    advance_to_next(emails)
                     st.rerun()
 
-            st.markdown("---")
-
-            # Task rows
-            for idx, task in enumerate(tasks):
-                with st.container():
-                    col1, col2, col3 = st.columns(3)
-
-                    # LLM Extracted column
-                    with col1:
-                        st.markdown(f"**Task {idx + 1}:** {task.get('description', 'No description')}")
-                        st.caption(f"Type: `{task.get('task_type', 'unknown')}`")
-                        st.caption(f"Urgency: {int(task.get('urgency', 0) * 100)}%")
-                        if task.get('deadline_text'):
-                            st.caption(f"Deadline: {task.get('deadline_text')}")
-
-                    # AI Predicted column
-                    with col2:
-                        if email['ai_task_score'] is not None:
-                            st.metric("Task Score", f"{int(email['ai_task_score'] * 100)}%")
-                        if email['ai_urgency'] is not None:
-                            st.metric("Urgency Score", f"{int(email['ai_urgency'] * 100)}%")
-                        if email['topic_category']:
-                            st.caption(f"Category: {email['topic_category']}")
-
-                    # Human Verified column
-                    with col3:
-                        with st.expander("Edit Details", expanded=False):
-                            triage = st.radio(
-                                "Triage",
-                                options=[t[0] for t in TRIAGE_CATEGORIES],
-                                format_func=lambda x: next((t[1] for t in TRIAGE_CATEGORIES if t[0] == x), x),
-                                key=f"triage_{email['id']}_{idx}",
-                                horizontal=True
-                            )
-
-                            relevancy = st.radio(
-                                "Relevancy",
-                                options=[r[0] for r in RELEVANCY_OPTIONS],
-                                format_func=lambda x: next((r[1] for r in RELEVANCY_OPTIONS if r[0] == x), x),
-                                key=f"rel_{email['id']}_{idx}",
-                                horizontal=True
-                            )
-
-                            quality = st.radio(
-                                "Extraction Quality",
-                                options=[q[0] for q in EXTRACTION_QUALITY],
-                                format_func=lambda x: next((q[1] for q in EXTRACTION_QUALITY if q[0] == x), x),
-                                key=f"qual_{email['id']}_{idx}",
-                                horizontal=True
-                            )
-
-                            notes = st.text_input("Notes", key=f"notes_{email['id']}_{idx}")
-
-                            if st.button(f"Save Task {idx + 1}", key=f"save_{email['id']}_{idx}"):
-                                project_id = selected_project_id if selected_project_id > 0 else None
-                                label_id = save_task_label(
-                                    conn,
-                                    email_id=email['id'],
-                                    task_index=idx,
-                                    task_description=task.get('description', ''),
-                                    project_id=project_id,
-                                    project_relevancy=relevancy,
-                                    triage_category=triage,
-                                    extraction_quality=quality,
-                                    notes=notes,
-                                    labeler=labeler,
-                                    ai_agreed=(quality == 'good')
-                                )
-
-                                if project_id:
-                                    update_email_project_link(conn, email['id'], project_id)
-
-                                if label_id:
-                                    st.success(f"Saved!")
-                                else:
-                                    st.warning("Already labeled")
-
-                    st.markdown("---")
-
-        # Bottom navigation
-        st.divider()
-        bottom_col1, bottom_col2 = st.columns([1, 1])
-
-        with bottom_col1:
-            if st.button("⏭️ Skip to Next", use_container_width=True):
-                if st.session_state.current_idx < len(emails) - 1:
-                    st.session_state.current_idx += 1
-                else:
-                    st.session_state.page += 1
-                    st.session_state.current_idx = 0
-                st.rerun()
-
-        with bottom_col2:
-            if st.button("✓ Done & Next", type="primary", use_container_width=True):
-                if st.session_state.current_idx < len(emails) - 1:
-                    st.session_state.current_idx += 1
-                else:
-                    st.session_state.page += 1
-                    st.session_state.current_idx = 0
-                st.rerun()
+                if not can_save:
+                    st.caption("Select a sub-action above")
 
         conn.close()
 
