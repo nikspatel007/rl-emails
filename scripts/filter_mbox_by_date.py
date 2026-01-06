@@ -8,9 +8,13 @@ Usage:
 import argparse
 import mailbox
 import email.utils
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+
+# Default configuration (can be overridden by env vars or CLI args)
+DEFAULT_MBOX_PATH = "/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/takeout/extracted/All mail Including Spam and Trash.mbox"
 
 
 def parse_email_date(date_str: str) -> datetime | None:
@@ -103,8 +107,16 @@ def filter_mbox(
 
 def main():
     parser = argparse.ArgumentParser(description="Filter mbox by date range")
-    parser.add_argument("source", type=Path, help="Source mbox file")
-    parser.add_argument("output", type=Path, help="Output mbox file")
+    parser.add_argument(
+        "source", type=Path, nargs="?",
+        default=Path(os.environ.get("MBOX_PATH", DEFAULT_MBOX_PATH)),
+        help="Source mbox file (default: $MBOX_PATH or built-in default)"
+    )
+    parser.add_argument(
+        "output", type=Path, nargs="?",
+        default=None,
+        help="Output mbox file (default: source directory + filtered_<months>m.mbox)"
+    )
     parser.add_argument(
         "--months", type=int, default=6,
         help="Include emails from last N months (default: 6)"
@@ -115,6 +127,10 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Generate default output path if not provided
+    if args.output is None:
+        args.output = args.source.parent / f"filtered_{args.months}m.mbox"
 
     if not args.source.exists():
         print(f"Error: Source file not found: {args.source}")

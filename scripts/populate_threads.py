@@ -27,8 +27,12 @@ Usage:
 
 import argparse
 import asyncio
+import os
 import sys
 from typing import Optional
+
+# Default configuration (can be overridden by env vars or CLI args)
+DEFAULT_DB_URL = "postgresql://postgres:postgres@localhost:5433/rl_emails"
 
 try:
     import asyncpg
@@ -190,8 +194,8 @@ async def main():
     )
     parser.add_argument(
         '--db-url',
-        default='postgresql://postgres:postgres@localhost:5433/rl_emails',
-        help='PostgreSQL connection URL'
+        default=os.environ.get('DB_URL', DEFAULT_DB_URL),
+        help='PostgreSQL connection URL (default: $DB_URL or built-in default)'
     )
     parser.add_argument(
         '--batch-size',

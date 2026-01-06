@@ -14,8 +14,13 @@ Extracts unique users from from_email, to_emails[], cc_emails[] and computes:
 """
 
 import argparse
+import os
+
 import psycopg2
 from psycopg2.extras import execute_values
+
+# Default configuration (can be overridden by env vars or CLI args)
+DEFAULT_DB_URL = "postgresql://postgres:postgres@localhost:5433/rl_emails"
 
 
 def get_connection(db_url: str):
@@ -324,8 +329,8 @@ def main():
     )
     parser.add_argument(
         '--db-url',
-        default='postgresql://postgres:postgres@localhost:5433/rl_emails',
-        help='PostgreSQL connection URL'
+        default=os.environ.get('DB_URL', DEFAULT_DB_URL),
+        help='PostgreSQL connection URL (default: $DB_URL or built-in default)'
     )
     parser.add_argument(
         '--stats-only',
