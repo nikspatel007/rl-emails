@@ -182,6 +182,52 @@ rl-emails/
 └── checkpoints/           # Training checkpoints
 ```
 
+
+## Enrichment Pipeline Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| **Phase 1** | Action labels (REPLIED, IGNORED, etc.) | ✅ Complete |
+| **Phase 2** | ML features (relationship, urgency, service detection) | ✅ Complete |
+| **Phase 3** | Semantic embeddings (text-embedding-3-small, 1536 dims) | ✅ Complete |
+| **Phase 4** | LLM-powered analysis (RAG, clustering, summaries) | 🔜 Next |
+
+### Phase 3 Stats (Embeddings)
+- 22,618 emails embedded
+- Model: text-embedding-3-small (1536 dimensions)
+- Processing: 24.7 emails/sec with 10 parallel workers
+- Cost: ~$0.14 total
+- Checkpoint: `backups/checkpoints/phase3_complete.tar.gz`
+
+### Scripts
+```bash
+# Compute embeddings (Phase 3)
+python scripts/compute_embeddings.py --workers 10
+
+# Restore from checkpoint
+python scripts/checkpoint.py restore phase3_complete
+
+# Verify embeddings
+python scripts/restore_embeddings.py --verify
+```
+
+## Next Steps
+
+**Phase 4: LLM Integration** - Use embeddings to power LLM features:
+- RAG search: Find relevant emails for any query
+- Topic clustering: Auto-discover projects/themes
+- Smart summaries: Cluster-aware email summaries
+- Priority explanation: "Why is this email important?"
+
+**Analysis System**:
+- Hybrid ranking: features + semantic similarity
+- Find emails similar to ones you replied to quickly
+- Anomaly detection: unusual emails from known senders
+
+**ML Training** (End Goal):
+- Build preference dataset: REPLIED vs IGNORED pairs
+- Train ranking model to predict response likelihood
+
 ## License
 
 MIT
