@@ -53,6 +53,28 @@ SERVICE_TYPES = {
     'social': ['linkedin', 'facebook', 'twitter', 'instagram', 'social'],
 }
 
+# Service importance detection
+IMPORTANT_SUBJECT_KEYWORDS = [
+    'order', 'shipped', 'delivered', 'delivery', 'payment', 'transaction',
+    'confirm', 'confirmed', 'confirmation', 'receipt', 'invoice', 'alert',
+    'security', 'verification', 'verify', 'password', 'login', 'suspicious',
+    'fraud', 'unauthorized', 'expired', 'expiring', 'renewal', 'bill',
+    'due', 'overdue', 'failed', 'declined', 'refund', 'return'
+]
+
+LOW_IMPORTANCE_KEYWORDS = [
+    'offer', 'sale', 'deal', 'save', 'discount', 'promo', 'promotional',
+    'newsletter', 'digest', 'weekly', 'daily', 'tips', 'recommendation',
+    'suggested', 'trending', 'popular', 'new arrivals', 'just for you',
+    'exclusive', 'limited time', 'don\'t miss', 'check out'
+]
+
+IMPORTANT_SENDER_PATTERNS = [
+    'order', 'shipping', 'shipment', 'tracking', 'confirm', 'alert',
+    'security', 'verify', 'transaction', 'payment', 'billing', 'receipt',
+    'return', 'refund', 'delivery', 'support'
+]
+
 
 def extract_plain_text(html_body: str) -> str:
     """Extract plain text from HTML email body."""
@@ -149,6 +171,50 @@ def get_time_bucket(hour: int) -> str:
         return 'night'
 
 
+def compute_service_importance(
+    from_email: str,
+    subject: str,
+    is_service: bool,
+) -> float:
+    """Compute importance score for service emails (0-1).
+
+    Higher = more likely to be important (transaction, alert, security)
+    Lower = more likely to be noise (marketing, newsletter)
+    """
+    if not is_service:
+        return 0.0  # Not applicable for non-service emails
+
+    from_email = (from_email or '').lower()
+    subject = (subject or '').lower()
+
+    # Subject importance (0.5 weight)
+    important_matches = sum(1 for kw in IMPORTANT_SUBJECT_KEYWORDS if kw in subject)
+    low_matches = sum(1 for kw in LOW_IMPORTANCE_KEYWORDS if kw in subject)
+
+    if important_matches > 0 and low_matches == 0:
+        subject_score = min(1.0, 0.5 + important_matches * 0.2)
+    elif low_matches > 0 and important_matches == 0:
+        subject_score = max(0.0, 0.3 - low_matches * 0.1)
+    elif important_matches > low_matches:
+        subject_score = 0.6
+    elif low_matches > important_matches:
+        subject_score = 0.2
+    else:
+        subject_score = 0.4  # Neutral
+
+    # Sender pattern importance (0.5 weight)
+    sender_matches = sum(1 for p in IMPORTANT_SENDER_PATTERNS if p in from_email)
+    if sender_matches > 0:
+        sender_score = min(1.0, 0.5 + sender_matches * 0.25)
+    else:
+        sender_score = 0.3  # Neutral for generic noreply addresses
+
+    # Combined score
+    importance = 0.5 * subject_score + 0.5 * sender_score
+
+    return min(1.0, max(0.0, importance))
+
+
 def is_business_hours(hour: int, day_of_week: int) -> bool:
     """Check if time is during business hours (9-17, Mon-Fri)."""
     return 0 <= day_of_week <= 4 and 9 <= hour < 17
@@ -174,10 +240,11 @@ async def create_email_features_table(conn: asyncpg.Connection) -> None:
             sender_replies_to_you_rate FLOAT,
             relationship_strength FLOAT,
 
-            -- Service Detection (6 dimensions)
+            -- Service Detection (7 dimensions)
             is_service_email BOOLEAN,
             service_confidence FLOAT,
             service_type TEXT,
+            service_importance FLOAT,
             has_unsubscribe_link BOOLEAN,
             has_list_unsubscribe_header BOOLEAN,
             from_common_service_domain BOOLEAN,
@@ -454,6 +521,9 @@ async def compute_features_batch(
             from_email, subject, body, None
         )
 
+        # Compute service importance (only meaningful for service emails)
+        service_importance = compute_service_importance(from_email, subject, is_service)
+
         # Check for common service domain patterns
         from_service_domain = any(p in from_email for p in SERVICE_DOMAINS)
 
@@ -509,6 +579,7 @@ async def compute_features_batch(
             'is_service_email': is_service,
             'service_confidence': service_conf,
             'service_type': service_type,
+            'service_importance': service_importance,
             'has_unsubscribe_link': has_unsub_link,
             'has_list_unsubscribe_header': has_list_unsub,
             'from_common_service_domain': from_service_domain,
@@ -551,6 +622,7 @@ async def store_features_batch(
                 days_since_last_interaction, sender_replies_to_you_rate,
                 relationship_strength,
                 is_service_email, service_confidence, service_type,
+                service_importance,
                 has_unsubscribe_link, has_list_unsubscribe_header,
                 from_common_service_domain,
                 hour_of_day, day_of_week, is_weekend, is_business_hours,
@@ -559,9 +631,9 @@ async def store_features_batch(
                 attachment_count, recipient_count
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18,
-                $19, $20, $21, $22, $23, $24, $25, $26,
-                $27, $28, $29, $30, $31
+                $13, $14, $15, $16, $17, $18, $19,
+                $20, $21, $22, $23, $24, $25, $26, $27,
+                $28, $29, $30, $31, $32
             )
             ON CONFLICT (email_id) DO UPDATE SET
                 emails_from_sender_7d = EXCLUDED.emails_from_sender_7d,
@@ -578,6 +650,7 @@ async def store_features_batch(
                 is_service_email = EXCLUDED.is_service_email,
                 service_confidence = EXCLUDED.service_confidence,
                 service_type = EXCLUDED.service_type,
+                service_importance = EXCLUDED.service_importance,
                 has_unsubscribe_link = EXCLUDED.has_unsubscribe_link,
                 has_list_unsubscribe_header = EXCLUDED.has_list_unsubscribe_header,
                 from_common_service_domain = EXCLUDED.from_common_service_domain,
@@ -605,6 +678,7 @@ async def store_features_batch(
                 f['days_since_last_interaction'], f['sender_replies_to_you_rate'],
                 f['relationship_strength'],
                 f['is_service_email'], f['service_confidence'], f['service_type'],
+                f['service_importance'],
                 f['has_unsubscribe_link'], f['has_list_unsubscribe_header'],
                 f['from_common_service_domain'],
                 f['hour_of_day'], f['day_of_week'], f['is_weekend'], f['is_business_hours'],
@@ -661,6 +735,24 @@ async def verify_results(conn: asyncpg.Connection) -> None:
     print(f"\n  Service type breakdown:")
     for row in service_types:
         print(f"    {row['service_type'] or 'unknown':15s}: {row['cnt']:,}")
+
+    # Service importance distribution
+    importance_dist = await conn.fetch("""
+        SELECT
+            CASE
+                WHEN service_importance >= 0.7 THEN 'HIGH (>=0.7)'
+                WHEN service_importance >= 0.4 THEN 'MEDIUM (0.4-0.7)'
+                ELSE 'LOW (<0.4)'
+            END as importance_level,
+            COUNT(*) as cnt
+        FROM email_features
+        WHERE is_service_email = TRUE
+        GROUP BY importance_level
+        ORDER BY importance_level
+    """)
+    print(f"\n  Service importance distribution:")
+    for row in importance_dist:
+        print(f"    {row['importance_level']:20s}: {row['cnt']:,}")
 
     # Top relationships
     print(f"\nTop 10 Relationships:")
