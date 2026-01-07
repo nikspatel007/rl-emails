@@ -6,7 +6,7 @@ Email ML pipeline for analyzing Gmail exports and predicting email priority/acti
 
 **Status**: Production-ready with 100% type coverage and 100% test coverage.
 
-**Current Phase**: Phase 2 - Gmail API Integration (IN PROGRESS)
+**Current Phase**: Phase 2 - Gmail API Integration (COMPLETE)
 
 ---
 
@@ -222,7 +222,7 @@ Add Gmail API as alternative data source alongside existing MBOX pipeline.
 | 7 | GmailClient Implementation | ✅ Complete | list, get, batch, history operations |
 | 8 | Gmail Parser | ✅ Complete | Gmail to EmailData conversion |
 | 9 | SyncService + Stage 00 | ✅ Complete | Initial sync, Gmail pipeline stage |
-| 10 | Incremental Sync | 🔄 In Progress | History API, delta processing |
+| 10 | Incremental Sync + CLI | ✅ Complete | CLI sync commands, final testing |
 
 ### Iteration 1 Deliverables
 - [x] `src/rl_emails/auth/` module structure
@@ -301,6 +301,14 @@ Add Gmail API as alternative data source alongside existing MBOX pipeline.
 - [x] Database storage in raw_emails and emails tables
 - [x] Tests for SyncService (40 tests) and stage_00 (12 tests)
 - [x] 100% test coverage maintained (892 tests)
+
+### Iteration 10 Deliverables
+- [x] CLI `sync` command with `--user`, `--days`, `--max-messages` flags
+- [x] CLI `sync --status` for checking sync status
+- [x] `sync_emails()`, `_show_sync_status()`, `_run_sync()` CLI handlers
+- [x] Comprehensive CLI tests (17 new tests)
+- [x] 100% test coverage maintained (909 tests)
+- [x] Phase 2 Gmail API Integration complete
 
 ### Documentation
 - `docs/PHASE2_ITERATIONS.md` - Phase 2 detailed iteration specs
