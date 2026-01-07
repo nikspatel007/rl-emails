@@ -309,20 +309,21 @@ def generate_report(parsed_jsonl: Path, duration: str) -> str:
 
         if data['llm_class_count'] > 0:
             cur.execute("""
-                SELECT category, COUNT(*) FROM email_llm_classification
-                GROUP BY category ORDER BY COUNT(*) DESC
+                SELECT action_type, COUNT(*) FROM email_llm_classification
+                GROUP BY action_type ORDER BY COUNT(*) DESC
             """)
             data['llm_categories'] = dict(cur.fetchall())
 
             cur.execute("""
-                SELECT action, COUNT(*) FROM email_llm_classification
-                GROUP BY action ORDER BY COUNT(*) DESC
+                SELECT suggested_action, COUNT(*) FROM email_llm_classification
+                WHERE suggested_action IS NOT NULL
+                GROUP BY suggested_action ORDER BY COUNT(*) DESC
             """)
             data['llm_actions'] = dict(cur.fetchall())
 
             cur.execute("""
-                SELECT priority, COUNT(*) FROM email_llm_classification
-                GROUP BY priority ORDER BY COUNT(*) DESC
+                SELECT urgency, COUNT(*) FROM email_llm_classification
+                GROUP BY urgency ORDER BY COUNT(*) DESC
             """)
             data['llm_priorities'] = dict(cur.fetchall())
 
@@ -819,7 +820,7 @@ def main():
 
         print(f"\nNext steps:")
         print(f"  1. Review report: cat {report_path}")
-        print(f"  2. Explore data: uv run streamlit run apps/labeling_ui.py")
+        print(f"  2. Explore data: uv run streamlit run apps/labeling_ui_v2.py")
         print(f"  3. Create checkpoint: uv run python scripts/checkpoint.py create --name onboarding_complete")
     print(f"{'='*60}")
 

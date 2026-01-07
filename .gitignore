@@ -30,3 +30,6 @@ backups/
 
 # Local ad-hoc test artifacts (may contain PII)
 /test.json
+
+# Archived scripts (removed during cleanup)
+archive/
