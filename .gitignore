@@ -52,3 +52,5 @@ scripts/download_*.sh
 scripts/import_all.sh
 scripts/*.sql
 PIPELINE.md
+credentials.json
+client_secret_2_1045724586932-ihurgtth04ehdop762b12fu7pvltdmbj.apps.googleusercontent.com.json

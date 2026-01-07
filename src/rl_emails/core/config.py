@@ -24,6 +24,10 @@ class Config:
     # Multi-tenant context (optional for backward compatibility)
     org_id: UUID | None = None
     user_id: UUID | None = None
+    # Google OAuth (Phase 2)
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Config:
@@ -60,6 +64,12 @@ class Config:
             openai_api_key=os.environ.get("OPENAI_API_KEY") or config.get("OPENAI_API_KEY"),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY")
             or config.get("ANTHROPIC_API_KEY"),
+            google_client_id=os.environ.get("GOOGLE_CLIENT_ID") or config.get("GOOGLE_CLIENT_ID"),
+            google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET")
+            or config.get("GOOGLE_CLIENT_SECRET"),
+            google_redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI")
+            or config.get("GOOGLE_REDIRECT_URI")
+            or "http://localhost:8000/auth/google/callback",
         )
 
     def validate(self) -> list[str]:
@@ -84,6 +94,10 @@ class Config:
     def has_llm(self) -> bool:
         """Check if any LLM API key is configured."""
         return self.has_openai() or self.has_anthropic()
+
+    def has_google_oauth(self) -> bool:
+        """Check if Google OAuth credentials are configured."""
+        return bool(self.google_client_id and self.google_client_secret)
 
     @property
     def is_multi_tenant(self) -> bool:

@@ -166,3 +166,78 @@ class TestConfigMultiTenant:
 
         assert new_config.user_id == user_id
         assert new_config.org_id is None
+
+
+class TestConfigGoogleOAuth:
+    """Tests for Config Google OAuth features."""
+
+    def test_has_google_oauth_true(self) -> None:
+        """Test has_google_oauth returns True when both fields set."""
+        config = Config(
+            database_url="test",
+            google_client_id="client-id-123",
+            google_client_secret="client-secret-456",
+        )
+        assert config.has_google_oauth() is True
+
+    def test_has_google_oauth_false_missing_id(self) -> None:
+        """Test has_google_oauth returns False when missing client_id."""
+        config = Config(
+            database_url="test",
+            google_client_secret="client-secret-456",
+        )
+        assert config.has_google_oauth() is False
+
+    def test_has_google_oauth_false_missing_secret(self) -> None:
+        """Test has_google_oauth returns False when missing client_secret."""
+        config = Config(
+            database_url="test",
+            google_client_id="client-id-123",
+        )
+        assert config.has_google_oauth() is False
+
+    def test_has_google_oauth_false_empty(self) -> None:
+        """Test has_google_oauth returns False with no OAuth config."""
+        config = Config(database_url="test")
+        assert config.has_google_oauth() is False
+
+    def test_default_redirect_uri(self) -> None:
+        """Test default redirect URI."""
+        config = Config(database_url="test")
+        assert config.google_redirect_uri == "http://localhost:8000/auth/google/callback"
+
+    def test_custom_redirect_uri(self) -> None:
+        """Test custom redirect URI."""
+        config = Config(
+            database_url="test",
+            google_redirect_uri="https://myapp.com/oauth/callback",
+        )
+        assert config.google_redirect_uri == "https://myapp.com/oauth/callback"
+
+    def test_from_env_with_google_oauth(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading Google OAuth config from environment."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/testdb")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "env-client-id")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "env-client-secret")
+        monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://env.example.com/callback")
+
+        config = Config.from_env()
+
+        assert config.google_client_id == "env-client-id"
+        assert config.google_client_secret == "env-client-secret"
+        assert config.google_redirect_uri == "https://env.example.com/callback"
+        assert config.has_google_oauth() is True
+
+    def test_from_env_google_oauth_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test Google OAuth defaults when not in environment."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/testdb")
+        monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+        monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("GOOGLE_REDIRECT_URI", raising=False)
+
+        config = Config.from_env()
+
+        assert config.google_client_id is None
+        assert config.google_client_secret is None
+        assert config.google_redirect_uri == "http://localhost:8000/auth/google/callback"
+        assert config.has_google_oauth() is False

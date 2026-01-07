@@ -217,7 +217,7 @@ Add Gmail API as alternative data source alongside existing MBOX pipeline.
 | 2 | GoogleOAuth Implementation | ✅ Complete | Authorization URL, code exchange, token refresh |
 | 3 | OAuthToken Repository | ✅ Complete | CRUD operations, Pydantic schemas |
 | 4 | AuthService Implementation | ✅ Complete | OAuth flow orchestration, token refresh |
-| 5 | CLI Auth Commands | Pending | connect, status, disconnect commands |
+| 5 | CLI Auth Commands | ✅ Complete | connect, status, disconnect commands |
 | 6 | Gmail Integration Module | Pending | Models, rate limiter |
 | 7 | GmailClient Implementation | Pending | list, get, batch operations |
 | 8 | Gmail Parser | Pending | Gmail to EmailData conversion |
@@ -252,7 +252,15 @@ Add Gmail API as alternative data source alongside existing MBOX pipeline.
 - [x] Auto-refresh tokens before expiry (5-minute buffer)
 - [x] `TokenNotFoundError` and `AuthServiceError` exceptions
 - [x] Tests for AuthService (25 tests)
-- [x] 100% test coverage maintained (707 tests)
+
+### Iteration 5 Deliverables
+- [x] Config with `google_client_id`, `google_client_secret`, `google_redirect_uri`
+- [x] Config.has_google_oauth() method
+- [x] CLI `auth connect --user UUID` command (opens browser)
+- [x] CLI `auth status --user UUID` command
+- [x] CLI `auth disconnect --user UUID` command
+- [x] Tests for Config Google OAuth (8 tests) and CLI auth (25 tests)
+- [x] 100% test coverage maintained (732 tests)
 
 ### Documentation
 - `docs/PHASE2_ITERATIONS.md` - Phase 2 detailed iteration specs
