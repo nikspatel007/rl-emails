@@ -358,86 +358,854 @@ Not all emails need LLM. Select based on:
 
 ---
 
-## Phase 4C: LLM Feature Extraction
+## Phase 4C: LLM Feature Extraction (AI Assistant Pipeline)
 
 ### What It Does
-For selected emails, use LLM to extract structured learning signals.
+For selected emails, use LLM to extract everything needed for an AI assistant to:
+1. **Understand** what the email requires
+2. **Act** on what it can handle autonomously
+3. **Brief** the user on what needs their attention
 
-### LLM Tasks
+### Design Philosophy: The AI Assistant Workflow
 
-#### 1. Importance Analysis
 ```
-Given this email, explain:
-1. Why might this need attention? (or why not?)
-2. What action does it require? (reply, task, FYI, none)
-3. What's the deadline/urgency? (immediate, this week, none)
-4. Key entities: people, projects, amounts mentioned
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        AI EMAIL ASSISTANT WORKFLOW                          │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  Email arrives                                                             │
+│       │                                                                    │
+│       ▼                                                                    │
+│  ┌──────────────────┐                                                      │
+│  │ 1. ANALYZE       │  What is this? Who sent it? What do they want?       │
+│  └────────┬─────────┘                                                      │
+│           │                                                                │
+│           ▼                                                                │
+│  ┌──────────────────┐                                                      │
+│  │ 2. CLASSIFY      │  Action needed? Task? FYI? Schedulable?              │
+│  └────────┬─────────┘                                                      │
+│           │                                                                │
+│           ▼                                                                │
+│  ┌──────────────────┐                                                      │
+│  │ 3. ASSESS AI     │  What can AI do? Draft? Schedule? Forward?           │
+│  │    CAPABILITY    │  What MUST be human? Decision? Approval?             │
+│  └────────┬─────────┘                                                      │
+│           │                                                                │
+│           ▼                                                                │
+│  ┌──────────────────┐                                                      │
+│  │ 4. EXTRACT       │  Context user needs: project background,             │
+│  │    CONTEXT       │  person relationship, relevant history               │
+│  └────────┬─────────┘                                                      │
+│           │                                                                │
+│           ▼                                                                │
+│  ┌──────────────────────────────────────────────────────────────────┐      │
+│  │                    5. ROUTE TO OUTCOME                            │      │
+│  ├──────────────────────────────────────────────────────────────────┤      │
+│  │                                                                   │      │
+│  │  AI_HANDLES          │  NEEDS_USER          │  FYI_ONLY          │      │
+│  │  ────────────        │  ──────────          │  ────────          │      │
+│  │  • Schedule meeting  │  • Decision needed   │  • Newsletter      │      │
+│  │  • Send follow-up    │  • Personal reply    │  • Notification    │      │
+│  │  • File/organize     │  • Approval required │  • Status update   │      │
+│  │  • Draft response    │  • Sensitive topic   │  • Confirmation    │      │
+│  │                      │                      │                    │      │
+│  │  → AI executes       │  → Brief user with   │  → Log for user    │      │
+│  │    (with approval    │    full context      │    if they want    │      │
+│  │    if configured)    │                      │    to review       │      │
+│  │                                                                   │      │
+│  └──────────────────────────────────────────────────────────────────┘      │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 2. Cluster Summarization
-```
-Given these 5 representative emails from a cluster:
-1. What topic/theme unites them?
-2. Suggested label (2-3 words)
-3. Typical required action for this type
-4. Importance pattern (always important, rarely, depends on...)
+### The Seven Extraction Dimensions
+
+#### 1. Action Detection
+**Question**: Is the user being asked to take an action?
+
+```yaml
+action_required:
+  is_action_requested: boolean      # Someone explicitly asking for something?
+  action_type: enum                 # reply | task | decision | approval | fyi | none
+  action_explicit: boolean          # "Please send X" vs implied expectation
+  action_description: string        # "Schedule meeting with vendor"
 ```
 
-#### 3. Training Signal Extraction
-```
-This email was REPLIED to within 2 hours.
-1. What signals indicated this needed a quick reply?
-2. What keywords/patterns suggest urgency?
-3. What about the sender/content made this important?
+#### 2. Task Extraction
+**Question**: Is there a task? What needs to happen?
 
-This email was IGNORED despite high feature scores.
-1. Why might this have been ignored?
-2. What signals indicate low importance despite surface urgency?
+```yaml
+task:
+  has_task: boolean                 # Is there a discrete task here?
+  task_description: string          # "Review contract and sign"
+  deadline: string                  # "by Friday", "ASAP", "when convenient"
+  deadline_type: enum               # hard | soft | none
+  deadline_parsed: timestamp        # Actual date if parseable
+  dependencies: string[]            # "After John sends the doc"
+  deliverable: string               # What's the output? "Signed PDF"
 ```
 
-### Output: `llm_features` Table
+#### 3. Reply Requirements
+**Question**: Does this need a reply? What kind?
+
+```yaml
+reply:
+  needs_reply: boolean              # Is a response expected?
+  reply_urgency: enum               # immediate | same_day | this_week | whenever | none
+  reply_type: enum                  # answer_question | confirm | provide_info | decision | none
+  reply_content_needed: string[]    # What info needed to reply? ["project status", "availability"]
+  can_be_brief: boolean             # "Yes" vs detailed response needed
+```
+
+#### 4. Context Requirements
+**Question**: What does user need to know to take action?
+
+```yaml
+context:
+  # Person context
+  sender_context_needed: boolean    # Need to know about this person?
+  sender_context: string            # "VP at client company, working on Project X"
+  relationship_relevant: boolean    # Does relationship matter for response?
+
+  # Project context
+  project_mentioned: string         # Project/initiative referenced
+  project_context_needed: boolean   # Need project background?
+  project_context: string           # "Q1 launch, currently in testing phase"
+
+  # Historical context
+  thread_context: string            # What happened before in this thread?
+  related_emails_hint: string       # "See emails from last week about budget"
+
+  # Decision context
+  decision_background: string       # If decision needed, what's the context?
+  options_presented: string[]       # Choices being offered
+```
+
+#### 5. AI Capability Assessment
+**Question**: What can AI do? What must be human?
+
+```yaml
+ai_capability:
+  # What AI can handle
+  ai_can_handle: enum               # fully | partially | not_at_all
+  ai_actions_possible: string[]     # ["draft_reply", "schedule_meeting", "forward_to_X"]
+  ai_draft_appropriate: boolean     # Should AI draft a response?
+  ai_draft_template: string         # If yes, what kind? "Confirmation", "Decline", etc.
+
+  # What needs human
+  requires_human_because: string[]  # ["decision", "personal_relationship", "sensitive"]
+  human_decision_type: string       # "Approve budget" / "Choose vendor" / etc.
+  human_input_needed: string[]      # Specific things human must provide
+
+  # Suggested AI actions
+  suggested_ai_actions:
+    - action: string                # "schedule_meeting"
+      confidence: float             # 0.9
+      requires_approval: boolean    # true
+      details: string               # "Meeting with John, next Tuesday 2pm suggested"
+```
+
+#### 6. Priority & Scheduling
+**Question**: How urgent? Can it be scheduled/batched?
+
+```yaml
+priority:
+  # Urgency assessment
+  urgency_level: enum               # critical | high | normal | low | none
+  urgency_reason: string            # "Deadline tomorrow" / "From CEO" / etc.
+  time_sensitive: boolean           # Will waiting cause problems?
+  time_sensitivity_window: string   # "Must respond by EOD" / "Within 48 hours"
+
+  # Scheduling potential
+  can_be_scheduled: boolean         # Can this wait for a scheduled time?
+  suggested_handling_time: enum     # now | today | this_week | batch_weekly
+  can_batch_with: string            # "Other vendor emails" / "Weekly review"
+
+  # Attention allocation
+  attention_level_needed: enum      # focused | quick_scan | background
+  estimated_handling_time: string   # "2 min reply" / "30 min review"
+```
+
+#### 7. Briefing Classification
+**Question**: How should AI present this to user?
+
+```yaml
+briefing:
+  # Category for user digest
+  category: enum                    # action_required | awaiting_input | fyi | ai_handled
+
+  # Briefing priority (for ordering in digest)
+  briefing_priority: int            # 1-5, 1 = show first
+
+  # One-line summary for digest
+  one_liner: string                 # "John needs budget approval for Q1 campaign by Friday"
+
+  # What user needs to know
+  key_points: string[]              # Bullet points for quick scan
+
+  # What user needs to do
+  user_action_summary: string       # "Reply with approved/denied + any conditions"
+
+  # What AI did/can do
+  ai_action_summary: string         # "Drafted approval response, ready to send"
+```
+
+### Complete Extraction Schema
 
 ```sql
-CREATE TABLE llm_features (
+CREATE TABLE llm_analysis (
     id SERIAL PRIMARY KEY,
-    email_id INTEGER REFERENCES emails(id),
+    email_id INTEGER REFERENCES emails(id) UNIQUE,
 
-    -- Structured extraction
-    llm_importance_score FLOAT,      -- 0-1, LLM's assessment
-    llm_action_type TEXT,            -- 'reply', 'task', 'fyi', 'ignore'
-    llm_urgency TEXT,                -- 'immediate', 'this_week', 'none'
-    llm_explanation TEXT,            -- Why this importance?
+    -- ═══════════════════════════════════════════════════════════════════
+    -- 1. ACTION DETECTION
+    -- ═══════════════════════════════════════════════════════════════════
+    action_requested BOOLEAN,
+    action_type TEXT,                   -- 'reply', 'task', 'decision', 'approval', 'fyi', 'none'
+    action_explicit BOOLEAN,
+    action_description TEXT,
 
-    -- Entities
+    -- ═══════════════════════════════════════════════════════════════════
+    -- 2. TASK EXTRACTION
+    -- ═══════════════════════════════════════════════════════════════════
+    has_task BOOLEAN,
+    task_description TEXT,
+    task_deadline TEXT,                 -- Raw deadline text
+    task_deadline_type TEXT,            -- 'hard', 'soft', 'none'
+    task_deadline_parsed TIMESTAMP,     -- Parsed date if possible
+    task_dependencies TEXT[],
+    task_deliverable TEXT,
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- 3. REPLY REQUIREMENTS
+    -- ═══════════════════════════════════════════════════════════════════
+    needs_reply BOOLEAN,
+    reply_urgency TEXT,                 -- 'immediate', 'same_day', 'this_week', 'whenever', 'none'
+    reply_type TEXT,                    -- 'answer_question', 'confirm', 'provide_info', 'decision', 'none'
+    reply_content_needed TEXT[],        -- What info needed to reply
+    reply_can_be_brief BOOLEAN,
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- 4. CONTEXT REQUIREMENTS
+    -- ═══════════════════════════════════════════════════════════════════
+    -- Person context
+    sender_context_needed BOOLEAN,
+    sender_context TEXT,
+    relationship_relevant BOOLEAN,
+
+    -- Project context
+    project_mentioned TEXT,
+    project_context_needed BOOLEAN,
+    project_context TEXT,
+
+    -- Historical context
+    thread_context TEXT,
+    related_emails_hint TEXT,
+
+    -- Decision context
+    decision_background TEXT,
+    options_presented TEXT[],
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- 5. AI CAPABILITY
+    -- ═══════════════════════════════════════════════════════════════════
+    ai_can_handle TEXT,                 -- 'fully', 'partially', 'not_at_all'
+    ai_actions_possible TEXT[],
+    ai_draft_appropriate BOOLEAN,
+    ai_draft_template TEXT,
+
+    requires_human_because TEXT[],
+    human_decision_type TEXT,
+    human_input_needed TEXT[],
+
+    -- Suggested actions (JSONB for flexibility)
+    suggested_ai_actions JSONB,
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- 6. PRIORITY & SCHEDULING
+    -- ═══════════════════════════════════════════════════════════════════
+    urgency_level TEXT,                 -- 'critical', 'high', 'normal', 'low', 'none'
+    urgency_reason TEXT,
+    time_sensitive BOOLEAN,
+    time_sensitivity_window TEXT,
+
+    can_be_scheduled BOOLEAN,
+    suggested_handling_time TEXT,       -- 'now', 'today', 'this_week', 'batch_weekly'
+    can_batch_with TEXT,
+
+    attention_level_needed TEXT,        -- 'focused', 'quick_scan', 'background'
+    estimated_handling_time TEXT,
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- 7. BRIEFING CLASSIFICATION
+    -- ═══════════════════════════════════════════════════════════════════
+    briefing_category TEXT,             -- 'action_required', 'awaiting_input', 'fyi', 'ai_handled'
+    briefing_priority INTEGER,          -- 1-5
+    one_liner TEXT,
+    key_points TEXT[],
+    user_action_summary TEXT,
+    ai_action_summary TEXT,
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- ENTITIES & TRAINING
+    -- ═══════════════════════════════════════════════════════════════════
     mentioned_people TEXT[],
     mentioned_projects TEXT[],
-    mentioned_deadlines TIMESTAMP[],
+    mentioned_deadlines TEXT[],
     mentioned_amounts TEXT[],
 
-    -- Training signals
-    importance_signals TEXT[],       -- What made this important
-    ignore_signals TEXT[],           -- What suggests low importance
+    -- Training signals (for RL)
+    importance_signals TEXT[],
+    ignore_signals TEXT[],
 
-    -- Metadata
-    model TEXT,                      -- 'claude-3-haiku', etc.
+    -- ═══════════════════════════════════════════════════════════════════
+    -- METADATA
+    -- ═══════════════════════════════════════════════════════════════════
+    model TEXT,
+    prompt_version TEXT,
     prompt_tokens INTEGER,
     completion_tokens INTEGER,
     cost_usd FLOAT,
+    processing_time_ms INTEGER,
 
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE INDEX idx_llm_briefing_category ON llm_analysis(briefing_category);
+CREATE INDEX idx_llm_urgency ON llm_analysis(urgency_level);
+CREATE INDEX idx_llm_ai_can_handle ON llm_analysis(ai_can_handle);
+CREATE INDEX idx_llm_needs_reply ON llm_analysis(needs_reply);
+```
+
+### The Extraction Prompt
+
+```markdown
+You are analyzing an email to help an AI assistant manage a user's inbox.
+Extract structured information to enable the assistant to:
+1. Handle what it can autonomously
+2. Brief the user on what needs their attention
+3. Provide all context needed for the user to act quickly
+
+## Email
+From: {sender}
+To: {recipient}
+Subject: {subject}
+Date: {date}
+Thread context: {thread_summary}  # If available
+
+---
+{body}
+---
+
+## Known Context
+- Sender relationship: {relationship_strength}
+- Past interactions: {interaction_history}
+- Projects mentioned: {known_projects}
+
+## Extract the following (respond in JSON):
+
+```json
+{
+  "action": {
+    "is_action_requested": true/false,
+    "action_type": "reply|task|decision|approval|fyi|none",
+    "action_explicit": true/false,
+    "action_description": "string or null"
+  },
+
+  "task": {
+    "has_task": true/false,
+    "task_description": "string or null",
+    "deadline": "string or null",
+    "deadline_type": "hard|soft|none",
+    "dependencies": ["string"],
+    "deliverable": "string or null"
+  },
+
+  "reply": {
+    "needs_reply": true/false,
+    "urgency": "immediate|same_day|this_week|whenever|none",
+    "type": "answer_question|confirm|provide_info|decision|none",
+    "content_needed": ["what info is needed to reply"],
+    "can_be_brief": true/false
+  },
+
+  "context": {
+    "sender_context_needed": true/false,
+    "sender_context": "string or null",
+    "relationship_relevant": true/false,
+    "project_mentioned": "string or null",
+    "project_context_needed": true/false,
+    "project_context": "string or null",
+    "thread_context": "string or null",
+    "decision_background": "string or null",
+    "options_presented": ["string"]
+  },
+
+  "ai_capability": {
+    "can_handle": "fully|partially|not_at_all",
+    "actions_possible": ["draft_reply", "schedule_meeting", "forward", "file", "none"],
+    "draft_appropriate": true/false,
+    "draft_template": "confirmation|decline|request_info|acknowledgment|none",
+    "requires_human_because": ["decision", "personal", "sensitive", "expertise", "approval"],
+    "human_decision_type": "string or null",
+    "human_input_needed": ["string"],
+    "suggested_actions": [
+      {
+        "action": "string",
+        "confidence": 0.0-1.0,
+        "requires_approval": true/false,
+        "details": "string"
+      }
+    ]
+  },
+
+  "priority": {
+    "urgency_level": "critical|high|normal|low|none",
+    "urgency_reason": "string or null",
+    "time_sensitive": true/false,
+    "time_sensitivity_window": "string or null",
+    "can_be_scheduled": true/false,
+    "suggested_handling_time": "now|today|this_week|batch_weekly",
+    "can_batch_with": "string or null",
+    "attention_level_needed": "focused|quick_scan|background",
+    "estimated_handling_time": "string"
+  },
+
+  "briefing": {
+    "category": "action_required|awaiting_input|fyi|ai_handled",
+    "priority": 1-5,
+    "one_liner": "Brief summary for inbox digest",
+    "key_points": ["bullet points for quick scan"],
+    "user_action_summary": "What user needs to do (or null)",
+    "ai_action_summary": "What AI did/can do (or null)"
+  },
+
+  "entities": {
+    "people": ["names mentioned"],
+    "projects": ["projects/initiatives"],
+    "deadlines": ["deadline strings"],
+    "amounts": ["money/quantities"]
+  },
+
+  "training_signals": {
+    "importance_indicators": ["signals suggesting importance"],
+    "ignore_indicators": ["signals suggesting low importance"]
+  }
+}
+```
+
+### Response Guidelines:
+1. Be conservative with AI capability - when in doubt, say "partially" or "not_at_all"
+2. For briefing.one_liner, write as if telling user "John needs X by Friday" not "The email discusses..."
+3. List specific actions AI can take, not vague capabilities
+4. If deadline can be parsed to a date, include it; otherwise leave as text
+5. For requires_human_because, be specific: "decision about vendor selection" not just "decision"
+```
+
+### Example Extractions
+
+#### Example 1: Meeting Request (AI Can Handle)
+```json
+{
+  "action": {
+    "is_action_requested": true,
+    "action_type": "task",
+    "action_explicit": true,
+    "action_description": "Schedule meeting to discuss Q1 results"
+  },
+  "task": {
+    "has_task": true,
+    "task_description": "Schedule 30-min meeting with Sarah",
+    "deadline": "this week",
+    "deadline_type": "soft",
+    "deliverable": "Calendar invite sent"
+  },
+  "reply": {
+    "needs_reply": true,
+    "urgency": "this_week",
+    "type": "confirm",
+    "content_needed": ["available times"],
+    "can_be_brief": true
+  },
+  "ai_capability": {
+    "can_handle": "fully",
+    "actions_possible": ["schedule_meeting", "draft_reply"],
+    "draft_appropriate": true,
+    "draft_template": "confirmation",
+    "suggested_actions": [
+      {
+        "action": "schedule_meeting",
+        "confidence": 0.95,
+        "requires_approval": true,
+        "details": "30-min meeting with Sarah Chen, suggested: Tue 2pm or Wed 10am"
+      }
+    ]
+  },
+  "priority": {
+    "urgency_level": "normal",
+    "can_be_scheduled": true,
+    "suggested_handling_time": "today",
+    "attention_level_needed": "quick_scan",
+    "estimated_handling_time": "2 min"
+  },
+  "briefing": {
+    "category": "ai_handled",
+    "priority": 3,
+    "one_liner": "Sarah wants to meet about Q1 results - I can schedule this",
+    "key_points": ["Meeting request from Sarah Chen", "Topic: Q1 results review", "Duration: 30 min"],
+    "ai_action_summary": "Ready to send invite for Tue 2pm, awaiting your approval"
+  }
+}
+```
+
+#### Example 2: Decision Required (Human Must Act)
+```json
+{
+  "action": {
+    "is_action_requested": true,
+    "action_type": "decision",
+    "action_explicit": true,
+    "action_description": "Approve or reject vendor contract renewal"
+  },
+  "task": {
+    "has_task": true,
+    "task_description": "Review and approve vendor contract",
+    "deadline": "Friday 5pm",
+    "deadline_type": "hard",
+    "deliverable": "Signed approval or rejection with feedback"
+  },
+  "reply": {
+    "needs_reply": true,
+    "urgency": "same_day",
+    "type": "decision",
+    "content_needed": ["approval decision", "any conditions or changes"],
+    "can_be_brief": false
+  },
+  "context": {
+    "sender_context_needed": true,
+    "sender_context": "Procurement team lead handling vendor relationships",
+    "project_mentioned": "Annual vendor renewals",
+    "project_context": "Part of cost reduction initiative, 3 vendors up for renewal",
+    "decision_background": "Contract increased 15% from last year",
+    "options_presented": ["Approve as-is", "Approve with conditions", "Reject and re-negotiate"]
+  },
+  "ai_capability": {
+    "can_handle": "partially",
+    "actions_possible": ["draft_reply"],
+    "draft_appropriate": false,
+    "requires_human_because": ["budget decision", "contract commitment", "requires domain expertise"],
+    "human_decision_type": "Vendor contract approval with budget impact",
+    "human_input_needed": ["approve/reject decision", "any conditions to include"],
+    "suggested_actions": [
+      {
+        "action": "prepare_context",
+        "confidence": 0.9,
+        "requires_approval": false,
+        "details": "Pulled last year's contract for comparison, vendor performance summary attached"
+      }
+    ]
+  },
+  "priority": {
+    "urgency_level": "high",
+    "urgency_reason": "Hard deadline Friday, contract expires Monday",
+    "time_sensitive": true,
+    "time_sensitivity_window": "Must respond by Friday 5pm",
+    "can_be_scheduled": false,
+    "suggested_handling_time": "today",
+    "attention_level_needed": "focused",
+    "estimated_handling_time": "15 min review + decision"
+  },
+  "briefing": {
+    "category": "action_required",
+    "priority": 1,
+    "one_liner": "Vendor contract renewal needs your approval by Friday - 15% increase from last year",
+    "key_points": [
+      "Acme Corp contract up for renewal",
+      "15% cost increase vs last year",
+      "Deadline: Friday 5pm (hard)",
+      "Options: approve, approve w/ conditions, reject"
+    ],
+    "user_action_summary": "Review contract, decide: approve/conditions/reject",
+    "ai_action_summary": "Prepared comparison with last year's contract and vendor performance summary"
+  }
+}
+```
+
+#### Example 3: FYI / Newsletter (Minimal Attention)
+```json
+{
+  "action": {
+    "is_action_requested": false,
+    "action_type": "fyi",
+    "action_explicit": false
+  },
+  "task": {
+    "has_task": false
+  },
+  "reply": {
+    "needs_reply": false,
+    "urgency": "none"
+  },
+  "ai_capability": {
+    "can_handle": "fully",
+    "actions_possible": ["file", "summarize"],
+    "suggested_actions": [
+      {
+        "action": "file_to_folder",
+        "confidence": 0.95,
+        "requires_approval": false,
+        "details": "Filed to 'Industry News' folder"
+      }
+    ]
+  },
+  "priority": {
+    "urgency_level": "none",
+    "can_be_scheduled": true,
+    "suggested_handling_time": "batch_weekly",
+    "can_batch_with": "Other newsletters",
+    "attention_level_needed": "background",
+    "estimated_handling_time": "skip or 30 sec scan"
+  },
+  "briefing": {
+    "category": "fyi",
+    "priority": 5,
+    "one_liner": "Industry newsletter - no action needed",
+    "key_points": ["Weekly tech digest", "3 articles about AI trends"],
+    "ai_action_summary": "Filed to Industry News, summarized headlines"
+  }
+}
 ```
 
 ### Cost Optimization
 
 | Strategy | Savings |
 |----------|---------|
-| Only process selected emails (10-15%) | 85-90% |
-| Use Haiku for most, Sonnet for complex | 50% |
-| Batch similar emails in one prompt | 30% |
-| Cache cluster summaries | 20% |
+| Only process selected emails (20%) | 80% |
+| Use Haiku for most, Sonnet for complex decisions | 50% |
+| Batch similar emails (same sender/cluster) | 30% |
+| Skip newsletters/marketing (rule-based) | 20% |
 
-**Estimated cost for 22K emails**: ~$2-5 (vs $17-200 naive approach)
+**Estimated cost for 22K emails**: ~$3-8 (processing ~4,400 selected emails)
+
+### User Briefing Interface
+
+The end goal: AI processes emails and presents a structured briefing to the user.
+
+#### Daily Digest Format
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                         YOUR EMAIL BRIEFING                                │
+│                         Monday, Jan 6, 2026                                │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  ⚡ NEEDS YOUR ATTENTION (3 items)                                         │
+│  ─────────────────────────────────────────────────────────────────────────│
+│                                                                            │
+│  1. [HIGH] Vendor contract renewal - approval needed by Friday             │
+│     From: Sarah Chen (Procurement)                                         │
+│     Context: 15% increase from last year, part of cost reduction init      │
+│     You need to: Decide approve/reject/conditions                          │
+│     AI prepared: Comparison with last year's contract                      │
+│     [View Details] [Draft Approval] [Draft Rejection]                      │
+│                                                                            │
+│  2. [HIGH] Q1 budget review meeting - decision on marketing spend          │
+│     From: John Lee (Finance)                                               │
+│     Context: Following up on last week's projection discussion             │
+│     You need to: Confirm final numbers before board meeting                │
+│     [View Details] [Review Numbers]                                        │
+│                                                                            │
+│  3. [NORMAL] Client feedback on prototype - response expected              │
+│     From: Mike Johnson (Acme Corp - key account)                           │
+│     Context: Phase 2 delivery, they have concerns about timeline           │
+│     You need to: Address timeline concerns, confirm next steps             │
+│     AI can: Draft acknowledgment, propose revised timeline                 │
+│     [View Details] [Use AI Draft] [Write Custom]                           │
+│                                                                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  🤖 AI HANDLED (5 items) - Review if you want                              │
+│  ─────────────────────────────────────────────────────────────────────────│
+│                                                                            │
+│  ✓ Meeting scheduled: Sarah Chen re: Q1 results (Tue 2pm)                  │
+│  ✓ Meeting scheduled: Team standup moved to Wed 9am per request            │
+│  ✓ Confirmation sent: Acknowledged receipt of contract docs                │
+│  ✓ Follow-up sent: Reminded vendor about pending invoice                   │
+│  ✓ Filed: 3 newsletters to "Industry News" folder                          │
+│                                                                            │
+│  [View All] [Undo Any]                                                     │
+│                                                                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  📋 TASKS EXTRACTED (2 new)                                                │
+│  ─────────────────────────────────────────────────────────────────────────│
+│                                                                            │
+│  □ Review vendor contract (Due: Fri) - from Sarah's email                  │
+│  □ Prepare board presentation (Due: Next Tue) - from John's email          │
+│                                                                            │
+│  [Add to Task Manager] [Dismiss]                                           │
+│                                                                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  📰 FYI - SKIM WHEN YOU HAVE TIME (12 items)                               │
+│  ─────────────────────────────────────────────────────────────────────────│
+│                                                                            │
+│  • Industry newsletter: 3 AI trends articles                               │
+│  • Company announcement: New parking policy                                │
+│  • Project update: Backend migration 80% complete                          │
+│  • ... and 9 more                                                          │
+│                                                                            │
+│  [View All FYI]                                                            │
+│                                                                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  📊 SUMMARY                                                                │
+│  ─────────────────────────────────────────────────────────────────────────│
+│                                                                            │
+│  • 47 emails received today                                                │
+│  • 3 need your attention (est. 25 min total)                               │
+│  • 5 handled by AI                                                         │
+│  • 12 FYI (can batch-review weekly)                                        │
+│  • 27 low-priority (auto-filed)                                            │
+│                                                                            │
+│  Time saved: ~45 min                                                       │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Briefing Data Structure
+
+```sql
+-- Aggregated briefing view (generated from llm_analysis)
+CREATE VIEW user_briefing AS
+SELECT
+    la.briefing_category,
+    la.briefing_priority,
+    la.one_liner,
+    la.key_points,
+    la.user_action_summary,
+    la.ai_action_summary,
+    la.urgency_level,
+    la.estimated_handling_time,
+
+    -- Email context
+    e.id as email_id,
+    e.sender,
+    e.subject,
+    e.received_at,
+
+    -- Relationship context
+    ef.relationship_strength,
+    ef.sender_name,
+
+    -- AI actions available
+    la.ai_can_handle,
+    la.suggested_ai_actions
+
+FROM llm_analysis la
+JOIN emails e ON e.id = la.email_id
+LEFT JOIN email_features ef ON ef.email_id = e.id
+ORDER BY
+    CASE la.briefing_category
+        WHEN 'action_required' THEN 1
+        WHEN 'awaiting_input' THEN 2
+        WHEN 'ai_handled' THEN 3
+        WHEN 'fyi' THEN 4
+    END,
+    la.briefing_priority,
+    la.urgency_level DESC;
+```
+
+#### API Response Format
+
+```json
+{
+  "briefing_date": "2026-01-06",
+  "summary": {
+    "total_emails": 47,
+    "needs_attention": 3,
+    "ai_handled": 5,
+    "fyi": 12,
+    "auto_filed": 27,
+    "estimated_attention_time_min": 25,
+    "time_saved_min": 45
+  },
+  "sections": {
+    "needs_attention": [
+      {
+        "email_id": 1234,
+        "priority": 1,
+        "urgency": "high",
+        "one_liner": "Vendor contract renewal - approval needed by Friday",
+        "sender": {"name": "Sarah Chen", "role": "Procurement", "relationship": "colleague"},
+        "context": "15% increase from last year, part of cost reduction initiative",
+        "user_action": "Decide approve/reject/conditions",
+        "ai_prepared": "Comparison with last year's contract",
+        "estimated_time": "15 min",
+        "actions": ["view_details", "draft_approval", "draft_rejection"]
+      }
+    ],
+    "ai_handled": [
+      {
+        "email_id": 2345,
+        "action_taken": "schedule_meeting",
+        "summary": "Meeting scheduled: Sarah Chen re: Q1 results (Tue 2pm)",
+        "reversible": true
+      }
+    ],
+    "tasks_extracted": [
+      {
+        "email_id": 1234,
+        "task": "Review vendor contract",
+        "deadline": "2026-01-10",
+        "source_sender": "Sarah Chen"
+      }
+    ],
+    "fyi": [
+      {
+        "email_id": 3456,
+        "one_liner": "Industry newsletter: 3 AI trends articles",
+        "can_batch_with": "Other newsletters"
+      }
+    ]
+  }
+}
+```
+
+#### Interaction Modes
+
+| Mode | User Experience | When to Use |
+|------|-----------------|-------------|
+| **Morning Briefing** | Full digest with all sections | Start of day |
+| **Quick Check** | Only "Needs Attention" count + top item | During meetings |
+| **Deep Review** | Expand all FYI, show AI reasoning | End of day |
+| **Approval Mode** | Step through AI-pending actions | Batch approve/reject |
+
+#### AI Action Approval Flow
+
+```
+AI wants to: Schedule meeting with Sarah Chen for Tue 2pm
+
+[Approve] - AI sends invite immediately
+[Modify] - "Make it Wed instead" → AI reschedules
+[Reject] - AI marks as "needs human handling"
+[Approve All Similar] - Auto-approve future meeting scheduling
+```
+
+#### Learning from Briefing Interactions
+
+Every user action on the briefing becomes training data:
+
+| User Action | Training Signal |
+|-------------|-----------------|
+| Clicked "View Details" | Email was important enough to read |
+| Used AI draft | AI assessment was accurate |
+| Wrote custom reply | AI draft insufficient (learn why) |
+| Dismissed task | Task extraction was wrong |
+| Undid AI action | AI overstepped |
+| Approved AI action | AI correctly autonomous |
+| Marked FYI as important | Misclassified, should be higher |
 
 ---
 
