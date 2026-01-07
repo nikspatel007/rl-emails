@@ -6,7 +6,7 @@ Email ML pipeline for analyzing Gmail exports and predicting email priority/acti
 
 **Status**: Production-ready with 100% type coverage and 100% test coverage.
 
-**Current Phase**: Phase 1 - Multi-Tenant Foundation (COMPLETE)
+**Current Phase**: Phase 2 - Gmail API Integration (IN PROGRESS)
 
 ---
 
@@ -201,3 +201,59 @@ See `docs/ARCHITECTURE_PLAN.md` for full 16-iteration roadmap.
 - `docs/ARCHITECTURE_PLAN.md` - Full 16-iteration architecture plan
 - `docs/PHASE1_ITERATIONS.md` - Phase 1 detailed iteration specs
 - `docs/GMAIL_API_SETUP.md` - Gmail API OAuth setup guide
+
+---
+
+## Phase 2 Progress
+
+### Goal
+Add Gmail API as alternative data source alongside existing MBOX pipeline.
+
+### Iteration Status
+
+| Iter | Name | Status | Notes |
+|------|------|--------|-------|
+| 1 | Auth Module Setup | ✅ Complete | OAuth types, GoogleTokens, OAuthError |
+| 2 | GoogleOAuth Implementation | ✅ Complete | Authorization URL, code exchange, token refresh |
+| 3 | OAuthToken Repository | ✅ Complete | CRUD operations, Pydantic schemas |
+| 4 | AuthService Implementation | ✅ Complete | OAuth flow orchestration, token refresh |
+| 5 | CLI Auth Commands | Pending | connect, status, disconnect commands |
+| 6 | Gmail Integration Module | Pending | Models, rate limiter |
+| 7 | GmailClient Implementation | Pending | list, get, batch operations |
+| 8 | Gmail Parser | Pending | Gmail to EmailData conversion |
+| 9 | SyncService + Stage 00 | Pending | Initial sync implementation |
+| 10 | Incremental Sync | Pending | History API, delta processing |
+
+### Iteration 1 Deliverables
+- [x] `src/rl_emails/auth/` module structure
+- [x] `GoogleTokens` dataclass with `is_expired()` and `expires_in_seconds()`
+- [x] `OAuthError` exception class
+- [x] Dependencies: google-auth, google-auth-oauthlib, httpx
+- [x] Tests for OAuth types (10 tests)
+
+### Iteration 2 Deliverables
+- [x] `GoogleOAuth` class with authorization URL generation
+- [x] Code exchange for access/refresh tokens
+- [x] Token refresh functionality
+- [x] Token revocation support
+- [x] Tests for GoogleOAuth (19 tests)
+
+### Iteration 3 Deliverables
+- [x] `OAuthTokenRepository` with async CRUD operations
+- [x] Pydantic schemas: OAuthTokenCreate, OAuthTokenUpdate, OAuthTokenResponse, OAuthTokenStatus
+- [x] Repository and schema exports updated
+- [x] Tests for repository and schemas (25 tests)
+- [x] 100% test coverage maintained (682 tests)
+
+### Iteration 4 Deliverables
+- [x] `src/rl_emails/services/` module structure
+- [x] `AuthService` class for OAuth flow orchestration
+- [x] `start_auth_flow()`, `complete_auth_flow()`, `get_valid_token()`, `revoke_token()` methods
+- [x] Auto-refresh tokens before expiry (5-minute buffer)
+- [x] `TokenNotFoundError` and `AuthServiceError` exceptions
+- [x] Tests for AuthService (25 tests)
+- [x] 100% test coverage maintained (707 tests)
+
+### Documentation
+- `docs/PHASE2_ITERATIONS.md` - Phase 2 detailed iteration specs
+- `ralph-wiggum-phase2.md` - Phase 2 implementation plan
