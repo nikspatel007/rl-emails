@@ -53,8 +53,11 @@ except ImportError:
     TOKENIZER = None
     HAS_TIKTOKEN = False
 
-# Configuration
-DB_URL = "postgresql://postgres:postgres@localhost:5433/gmail_twoyrs"
+# Configuration - DATABASE_URL is required
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    print("ERROR: DATABASE_URL environment variable is required")
+    sys.exit(1)
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
 DEFAULT_WORKERS = 10  # Parallel API calls

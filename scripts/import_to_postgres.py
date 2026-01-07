@@ -1,13 +1,19 @@
 """Import parsed email data into PostgreSQL database."""
 import asyncio
 import json
+import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 import asyncpg
+from dotenv import load_dotenv
+
+# Load .env from project root
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 # Batch size for processing
 BATCH_SIZE = 500
@@ -253,40 +259,34 @@ async def verify_import(conn: asyncpg.Connection):
 
 
 async def main():
-    import argparse
+    import os
+    from urllib.parse import urlparse
 
-    parser = argparse.ArgumentParser(description='Import emails to PostgreSQL')
-    parser.add_argument('--jsonl', type=Path, required=True, help='Path to JSONL file')
-    parser.add_argument('--schema', type=Path, default=Path('scripts/create_schema.sql'),
-                        help='Path to schema SQL file')
-    parser.add_argument('--database', default='emails', help='Database name')
-    parser.add_argument('--host', default='localhost', help='Database host')
-    parser.add_argument('--port', type=int, default=5432, help='Database port')
-    parser.add_argument('--user', default='postgres', help='Database user')
-    parser.add_argument('--password', default='', help='Database password')
-    parser.add_argument('--create-schema', action='store_true', help='Create schema before import')
-    parser.add_argument('--verify', action='store_true', help='Verify import after completion')
+    # Required environment variables
+    database_url = os.environ.get('DATABASE_URL')
+    parsed_jsonl = os.environ.get('PARSED_JSONL')
 
-    args = parser.parse_args()
+    if not database_url:
+        print("ERROR: DATABASE_URL environment variable is required")
+        sys.exit(1)
+    if not parsed_jsonl:
+        print("ERROR: PARSED_JSONL environment variable is required")
+        sys.exit(1)
+
+    # Parse DATABASE_URL
+    parsed = urlparse(database_url)
 
     # Connect to database
     conn = await asyncpg.connect(
-        host=args.host,
-        port=args.port,
-        user=args.user,
-        password=args.password,
-        database=args.database
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        user=parsed.username,
+        password=parsed.password,
+        database=parsed.path.lstrip('/')
     )
 
     try:
-        if args.create_schema:
-            await create_schema(conn, args.schema)
-
-        await import_emails(conn, args.jsonl)
-
-        if args.verify:
-            await verify_import(conn)
-
+        await import_emails(conn, Path(parsed_jsonl))
     finally:
         await conn.close()
 

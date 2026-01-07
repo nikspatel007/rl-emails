@@ -25,14 +25,15 @@ Usage:
     python scripts/populate_threads.py --db-url postgresql://user:pass@host:port/db
 """
 
-import argparse
 import asyncio
 import os
 import sys
+from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
 
-# Default configuration (can be overridden by env vars or CLI args)
-DEFAULT_DB_URL = "postgresql://postgres:postgres@localhost:5433/rl_emails"
+# Load .env from project root
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 try:
     import asyncpg
@@ -189,29 +190,18 @@ async def verify_results(conn: asyncpg.Connection):
 
 async def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description='Populate threads table with aggregated email data'
-    )
-    parser.add_argument(
-        '--db-url',
-        default=os.environ.get('DB_URL', DEFAULT_DB_URL),
-        help='PostgreSQL connection URL (default: $DB_URL or built-in default)'
-    )
-    parser.add_argument(
-        '--batch-size',
-        type=int,
-        default=1000,
-        help='Batch size for inserts'
-    )
-
-    args = parser.parse_args()
+    # Required environment variable
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        print("ERROR: DATABASE_URL environment variable is required")
+        sys.exit(1)
 
     print("Populate Threads Table")
     print("=" * 40)
-    print(f"\nConnecting to {args.db_url}...")
+    print(f"\nConnecting to {db_url}...")
 
     try:
-        conn = await asyncpg.connect(args.db_url)
+        conn = await asyncpg.connect(db_url)
     except Exception as e:
         print(f"Error connecting to database: {e}")
         sys.exit(1)
@@ -230,7 +220,7 @@ async def main():
             sys.exit(1)
 
         # Populate threads
-        stats = await populate_threads(conn, batch_size=args.batch_size)
+        stats = await populate_threads(conn, batch_size=1000)
 
         print(f"\nPopulation complete!")
         print(f"  Threads inserted: {stats['threads_inserted']}")

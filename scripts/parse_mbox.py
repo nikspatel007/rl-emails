@@ -14,11 +14,24 @@ from pathlib import Path
 from datetime import datetime
 from email.header import decode_header
 from collections import Counter
+from dotenv import load_dotenv
 
+# Load .env from project root
+load_dotenv(Path(__file__).parent.parent / ".env")
 
-# Read paths from environment variables, with fallbacks
-MBOX_PATH = Path(os.environ.get("MBOX_PATH", "/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/takeout/extracted/All mail Including Spam and Trash.mbox"))
-OUTPUT_PATH = Path(os.environ.get("PARSED_JSONL", "/Users/nikpatel/Documents/GitHub/rl-emails/data/nik_gmail/parsed_emails.jsonl"))
+# Required environment variables
+_mbox_path = os.environ.get("MBOX_PATH")
+_output_path = os.environ.get("PARSED_JSONL")
+
+if not _mbox_path:
+    print("ERROR: MBOX_PATH environment variable is required")
+    exit(1)
+if not _output_path:
+    print("ERROR: PARSED_JSONL environment variable is required")
+    exit(1)
+
+MBOX_PATH = Path(_mbox_path)
+OUTPUT_PATH = Path(_output_path)
 REPORT_PATH = OUTPUT_PATH.parent / "parse_report.json"
 
 

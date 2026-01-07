@@ -12,11 +12,21 @@ This runs BEFORE any LLM calls to reduce cost.
 """
 
 import json
+import os
 import psycopg2
+from pathlib import Path
 from psycopg2.extras import execute_values
 from datetime import datetime
+from dotenv import load_dotenv
 
-DB_URL = "postgresql://postgres:postgres@localhost:5433/gmail_twoyrs"
+# Load .env from project root
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    print("ERROR: DATABASE_URL environment variable is required")
+    import sys
+    sys.exit(1)
 
 
 def classify_email(email: dict, features: dict) -> tuple[str, str, dict]:
@@ -188,45 +198,13 @@ def classify_email(email: dict, features: dict) -> tuple[str, str, dict]:
     }
 
 
-def create_table(conn):
-    """Create the classification table if not exists."""
+def ensure_table(conn):
+    """Ensure the classification table exists (created by alembic) and is empty."""
     cur = conn.cursor()
-    cur.execute("""
-        DROP TABLE IF EXISTS email_ai_classification;
-
-        CREATE TABLE email_ai_classification (
-            email_id INTEGER PRIMARY KEY REFERENCES emails(id),
-
-            -- Rule-based classification
-            predicted_handleability TEXT,
-            classification_reason TEXT,
-            classification_metadata JSONB,
-
-            -- Pattern flags
-            has_question BOOLEAN,
-            has_request BOOLEAN,
-            has_scheduling BOOLEAN,
-            has_deadline BOOLEAN,
-            has_approval BOOLEAN,
-            has_confirm BOOLEAN,
-            is_newsletter BOOLEAN,
-            is_fyi BOOLEAN,
-            is_calendar_response BOOLEAN,
-            has_attachment_ref BOOLEAN,
-
-            -- LLM processing flags
-            needs_llm_classification BOOLEAN,
-            llm_priority INTEGER,
-
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE INDEX idx_ai_class_handleability ON email_ai_classification(predicted_handleability);
-        CREATE INDEX idx_ai_class_needs_llm ON email_ai_classification(needs_llm_classification);
-        CREATE INDEX idx_ai_class_llm_priority ON email_ai_classification(llm_priority);
-    """)
+    # Clear existing data for idempotent re-runs
+    cur.execute("DELETE FROM email_ai_classification")
     conn.commit()
-    print("Created email_ai_classification table")
+    print("Cleared email_ai_classification table for fresh classification")
 
 
 def run_classification(conn):
@@ -424,7 +402,7 @@ def main():
     conn = psycopg2.connect(DB_URL)
 
     try:
-        create_table(conn)
+        ensure_table(conn)
         count = run_classification(conn)
         print_summary(conn)
     finally:

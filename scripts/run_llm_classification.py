@@ -31,7 +31,10 @@ from litellm import completion
 # Load .env file
 load_dotenv()
 
-DB_URL = "postgresql://postgres:postgres@localhost:5433/gmail_twoyrs"
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    print("ERROR: DATABASE_URL environment variable is required")
+    sys.exit(1)
 
 # Model mapping (LiteLLM format)
 MODELS = {

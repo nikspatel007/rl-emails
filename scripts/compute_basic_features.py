@@ -13,7 +13,7 @@ Usage:
     python scripts/compute_basic_features.py --verify
 
 Required .env variables:
-    DB_URL - PostgreSQL connection URL
+    DATABASE_URL - PostgreSQL connection URL
     YOUR_EMAIL - Your email address
 """
 
@@ -33,7 +33,7 @@ from tqdm import tqdm
 # Load environment variables
 load_dotenv()
 
-DB_URL = os.environ.get('DB_URL')
+DB_URL = os.environ.get('DATABASE_URL')
 YOUR_EMAIL = os.environ.get('YOUR_EMAIL', '').lower()
 
 # Service email detection patterns
@@ -789,7 +789,7 @@ async def run_pipeline(batch_size: int = 1000) -> dict:
 
     # Validate environment
     if not DB_URL:
-        print("Error: DB_URL not set in .env")
+        print("Error: DATABASE_URL not set in .env")
         sys.exit(1)
 
     print(f"Database: {DB_URL}")
