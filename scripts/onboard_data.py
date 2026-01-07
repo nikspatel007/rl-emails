@@ -7,10 +7,11 @@ Processes a Gmail MBOX export through the complete ML pipeline:
 1. Parse MBOX → JSONL
 2. Import to PostgreSQL
 3. Build thread relationships
-4. Compute ML features (Phase 2)
-5. Generate embeddings (Phase 3)
-6. Rule-based AI classification (Phase 0)
-7. LLM classification (Phase 4)
+4. Compute action labels (Phase 1) - REPLIED, ARCHIVED, IGNORED, etc.
+5. Compute ML features (Phase 2)
+6. Generate embeddings (Phase 3)
+7. Rule-based AI classification (Phase 0)
+8. LLM classification (Phase 4)
 
 Usage:
     python scripts/onboard_data.py
@@ -22,6 +23,7 @@ Usage:
 All configuration is read from .env:
     DATABASE_URL - PostgreSQL connection URL (required)
     MBOX_PATH - Path to Gmail MBOX file (required)
+    YOUR_EMAIL - Your email address for identifying sent emails (required)
     PARSED_JSONL - Path to output JSONL file (optional, default: data/onboarding/parsed_emails.jsonl)
     OPENAI_API_KEY - For embeddings (required)
     ANTHROPIC_API_KEY - For LLM classification (optional, uses OpenAI if not set)
@@ -49,6 +51,7 @@ config = dotenv_values(ENV_FILE)
 DATABASE_URL = config.get("DATABASE_URL")
 MBOX_PATH = config.get("MBOX_PATH")
 PARSED_JSONL = config.get("PARSED_JSONL")  # Optional - defaults to data/onboarding/parsed_emails.jsonl
+YOUR_EMAIL = config.get("YOUR_EMAIL")  # Required for Phase 1 (action labels)
 OPENAI_API_KEY = config.get("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = config.get("ANTHROPIC_API_KEY")
 
@@ -59,6 +62,8 @@ def validate_config():
         missing.append("DATABASE_URL")
     if not MBOX_PATH:
         missing.append("MBOX_PATH")
+    if not YOUR_EMAIL:
+        missing.append("YOUR_EMAIL")
     if missing:
         print(f"ERROR: Missing required .env variables: {', '.join(missing)}")
         print(f"Please set them in {ENV_FILE}")
@@ -675,7 +680,7 @@ def main():
         "--start-from",
         type=int,
         default=0,
-        choices=range(0, 9),
+        choices=range(0, 10),
         help="Start from stage N (0-8, 0=migrations)"
     )
     parser.add_argument(
@@ -737,6 +742,8 @@ def main():
     os.environ["MBOX_PATH"] = str(mbox_path.absolute())
     os.environ["PARSED_JSONL"] = str(parsed_jsonl.absolute())
     os.environ["DATABASE_URL"] = DATABASE_URL
+    os.environ["DB_URL"] = DATABASE_URL  # Alias for enrich_emails_db.py
+    os.environ["YOUR_EMAIL"] = YOUR_EMAIL or ""
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY or ""
     os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY or ""
 
@@ -770,10 +777,11 @@ def main():
         (1, "parse_mbox.py", [], "Parse MBOX to JSONL"),
         (2, "import_to_postgres.py", [], "Import to PostgreSQL"),
         (3, "populate_threads.py", [], "Build thread relationships"),
-        (4, "compute_basic_features.py", [], "Compute ML features (Phase 2)"),
-        (5, "compute_embeddings.py", ["--workers", str(args.workers)], "Generate embeddings (Phase 3)"),
-        (6, "classify_ai_handleability.py", [], "Rule-based classification (Phase 0)"),
-        (7, "run_llm_classification.py", ["--all", str(args.workers), args.llm_model], "LLM classification (Phase 4)"),
+        (4, "enrich_emails_db.py", [], "Compute action labels (Phase 1)"),
+        (5, "compute_basic_features.py", [], "Compute ML features (Phase 2)"),
+        (6, "compute_embeddings.py", ["--workers", str(args.workers)], "Generate embeddings (Phase 3)"),
+        (7, "classify_ai_handleability.py", [], "Rule-based classification (Phase 0)"),
+        (8, "run_llm_classification.py", ["--all", str(args.workers), args.llm_model], "LLM classification (Phase 4)"),
     ]
 
     failed = False
@@ -793,7 +801,7 @@ def main():
             print(f"\nSkipping stage {stage_num}: {description} (--skip-llm)")
             continue
 
-        success = run_script(script, script_args, f"[{stage_num}/7] {description}")
+        success = run_script(script, script_args, f"[{stage_num}/8] {description}")
 
         if not success:
             failed = True
