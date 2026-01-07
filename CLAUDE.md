@@ -4,41 +4,7 @@
 
 Email ML pipeline for analyzing Gmail exports and predicting email priority/actions.
 
-## Production Plan
-
-**See `ralph-wiggum.md` for the iteration plan.**
-
-The goal is to transform this codebase into a production-ready system with:
-- Proper `src/rl_emails/` package structure
-- 100% strict typing (`mypy --strict` passes)
-- 100% test coverage (`pytest --cov-fail-under=100`)
-- Pre-commit hooks enforcing all quality gates
-
-**Current Status**: Check `ralph-wiggum.md` Progress Log for current iteration.
-
-### How to Continue
-
-1. Open `ralph-wiggum.md`
-2. Find the current iteration (first one with PENDING status)
-3. Complete all tasks in that iteration
-4. Run the verification commands
-5. Update the Progress Log
-6. Commit and move to next iteration
-
----
-
-## Current Structure
-
-```
-rl-emails/
-├── scripts/           # Pipeline scripts (15 files)
-├── tests/             # Test suite (to be expanded)
-├── alembic/           # Database migrations
-├── archive/           # Legacy code (to be deleted)
-├── pyproject.toml     # Project config
-├── ralph-wiggum.md    # Production iteration plan
-└── CLAUDE.md          # This file
-```
+**Status**: Production-ready with 100% type coverage and 100% test coverage.
 
 ---
 
@@ -46,7 +12,10 @@ rl-emails/
 
 ```bash
 # Install dependencies
-uv sync
+uv sync --all-extras
+
+# Install pre-commit hooks
+make hooks
 
 # Set up environment
 cp .env.example .env
@@ -56,22 +25,81 @@ cp .env.example .env
 docker compose up -d
 
 # Run pipeline
-uv run python scripts/onboard_data.py
+make run
 
 # Check status
-uv run python scripts/onboard_data.py --status
+make status
 ```
 
 ---
 
-## Environment Variables
+## Development
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5433/gmail_test_30d
-MBOX_PATH=/path/to/your/gmail.mbox
-YOUR_EMAIL=your_email@example.com
-OPENAI_API_KEY=sk-...
+# Setup
+make install              # Install all dependencies
+make hooks                # Install pre-commit hooks
+
+# Quality checks
+make lint                 # Run ruff linter
+make type-check           # Run mypy strict
+make test                 # Run all tests
+make coverage             # Run tests with 100% coverage
+
+# All checks at once
+make check                # lint + type-check + test + coverage
+
+# Formatting
+make format               # Auto-fix lint and format issues
+
+# Pipeline
+make run                  # Run the full pipeline
+make status               # Check pipeline status
+make validate             # Validate data
 ```
+
+---
+
+## Project Structure
+
+```
+rl-emails/
+├── src/rl_emails/        # Python package (100% typed, 100% tested)
+│   ├── core/             # Core utilities
+│   │   ├── db.py         # Database connection helpers
+│   │   ├── config.py     # Configuration management
+│   │   └── types.py      # TypedDict definitions
+│   └── __init__.py
+├── scripts/              # Pipeline scripts (15 files)
+│   ├── onboard_data.py   # Main orchestrator
+│   ├── parse_mbox.py     # Stage 1: Parse MBOX
+│   ├── import_to_postgres.py  # Stage 2: Import to DB
+│   ├── populate_threads.py    # Stage 3: Build threads
+│   └── ...               # Stages 4-11
+├── tests/                # Test suite
+│   ├── unit/             # Unit tests (100% coverage)
+│   └── integration/      # Integration tests
+├── alembic/              # Database migrations
+├── Makefile              # Development commands
+├── pyproject.toml        # Project config
+├── .pre-commit-config.yaml  # Quality gates
+└── ralph-wiggum.md       # Production plan (completed)
+```
+
+---
+
+## Quality Gates
+
+All enforced by pre-commit hooks:
+
+| Gate | Command | Status |
+|------|---------|--------|
+| Linting | `make lint` | ruff check + format |
+| Types | `make type-check` | mypy --strict |
+| Tests | `make test` | pytest |
+| Coverage | `make coverage` | 100% required |
+
+Run `make check` to verify all gates pass.
 
 ---
 
@@ -91,44 +119,23 @@ OPENAI_API_KEY=sk-...
 | 10 | compute_priority.py | Hybrid priority ranking |
 | 11 | run_llm_classification.py | LLM classification |
 
-### Utilities
-
-| Script | Purpose |
-|--------|---------|
-| onboard_data.py | Main orchestrator |
-| checkpoint.py | Checkpoint/restore |
-| query_db.py | Database queries |
-| validate_data.py | Data validation |
-
 ---
 
-## Development (After Iteration 7)
-
-Once the production plan is complete:
+## Environment Variables
 
 ```bash
-# Setup
-make install              # Install dependencies
-make hooks                # Install pre-commit hooks
-
-# Development cycle
-make format               # Auto-fix formatting
-make check                # Run all checks (lint + type + test)
-
-# Testing
-make test                 # Run all tests
-make coverage             # Run with coverage report
-
-# Pipeline
-make run                  # Run pipeline
-make status               # Check status
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/gmail_test_30d
+MBOX_PATH=/path/to/your/gmail.mbox
+YOUR_EMAIL=your_email@example.com
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=ant-...  # Optional, for LLM classification
 ```
 
 ---
 
 ## Database Schema
 
-Key tables:
+Key tables populated by the pipeline:
 
 | Table | Purpose |
 |-------|---------|
