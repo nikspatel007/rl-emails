@@ -3,7 +3,7 @@
 **Goal**: Convert the onboarding pipeline into a typed, 100% tested, strict production codebase.
 
 **Status**: IN_PROGRESS
-**Current Iteration**: 1
+**Current Iteration**: 2
 
 ---
 
@@ -27,12 +27,12 @@ The onboarding pipeline (`scripts/`) is the core working code. The `src/` folder
 
 ## Iteration Plan
 
-### Iteration 1: Audit & Clean
+### Iteration 1: Audit & Clean ✅ COMPLETE
 **Success Criteria**:
-- [ ] `src/` moved to `archive/experimental/`
-- [ ] `apps/` moved to `archive/ui/`
-- [ ] Root folder cleaned (only essential files)
-- [ ] `git status` shows clean working tree after commit
+- [x] `src/` moved to `archive/experimental/`
+- [x] `apps/` moved to `archive/ui/`
+- [x] Root folder cleaned (only essential files)
+- [x] `git status` shows clean working tree after commit
 
 **Tasks**:
 1. Move `src/` to `archive/experimental/`
@@ -218,11 +218,12 @@ make clean
 
 ## Progress Log
 
-### Iteration 1 - [DATE]
-- Status: PENDING
-- Notes:
+### Iteration 1 - 2026-01-07
+- Status: ✅ COMPLETE
+- Commit: c6f8dc9
+- Notes: Removed 69 files (33,745 lines). src/, apps/, old tests moved to archive/. Repository now contains only production pipeline code.
 
-### Iteration 2 - [DATE]
+### Iteration 2 - [IN PROGRESS]
 - Status: PENDING
 - Notes:
 
