@@ -708,8 +708,8 @@ make clean                # Remove cache files
 | 2 | COMPLETE | 2026-01-07 | cd62284 | Package structure - src/rl_emails/ created |
 | 3 | COMPLETE | 2026-01-07 | 3abfcc9 | Test infrastructure - 8 tests passing |
 | 4 | COMPLETE | 2026-01-07 | e1cb7a1 | 100% coverage - 23 tests, lean package |
-| 5 | COMPLETE | 2026-01-07 | TBD | Integration tests - 63 tests (8 skip w/o DB) |
-| 6 | PENDING | - | - | Pre-commit hooks |
+| 5 | COMPLETE | 2026-01-07 | 3777592 | Integration tests - 63 tests (8 skip w/o DB) |
+| 6 | COMPLETE | 2026-01-07 | TBD | Pre-commit hooks installed |
 | 7 | PENDING | - | - | Makefile & CI |
 | 8 | PENDING | - | - | Final cleanup |
 
