@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from dotenv import dotenv_values
 
@@ -20,6 +21,9 @@ class Config:
     your_email: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
+    # Multi-tenant context (optional for backward compatibility)
+    org_id: UUID | None = None
+    user_id: UUID | None = None
 
     @classmethod
     def from_env(cls, env_file: Path | None = None) -> Config:
@@ -80,3 +84,22 @@ class Config:
     def has_llm(self) -> bool:
         """Check if any LLM API key is configured."""
         return self.has_openai() or self.has_anthropic()
+
+    @property
+    def is_multi_tenant(self) -> bool:
+        """Check if running in multi-tenant mode."""
+        return self.user_id is not None
+
+    def with_user(self, user_id: UUID, org_id: UUID | None = None) -> Config:
+        """Create a new config with user context.
+
+        Args:
+            user_id: User UUID for multi-tenant filtering.
+            org_id: Optional organization UUID.
+
+        Returns:
+            New Config instance with user context.
+        """
+        from dataclasses import replace
+
+        return replace(self, user_id=user_id, org_id=org_id)

@@ -116,3 +116,53 @@ class TestConfig:
         config = Config.from_env(env_file=env_file)
 
         assert config.database_url == "postgresql://from_env/db"
+
+
+class TestConfigMultiTenant:
+    """Tests for Config multi-tenant features."""
+
+    def test_is_multi_tenant_false_by_default(self) -> None:
+        """Test is_multi_tenant is False when no user_id."""
+        config = Config(database_url="test")
+        assert config.is_multi_tenant is False
+
+    def test_is_multi_tenant_true_with_user_id(self) -> None:
+        """Test is_multi_tenant is True when user_id set."""
+        import uuid
+
+        config = Config(database_url="test", user_id=uuid.uuid4())
+        assert config.is_multi_tenant is True
+
+    def test_with_user_creates_new_config(self) -> None:
+        """Test with_user creates a new config with user context."""
+        import uuid
+
+        config = Config(database_url="test", openai_api_key="sk-test")
+        user_id = uuid.uuid4()
+        org_id = uuid.uuid4()
+
+        new_config = config.with_user(user_id, org_id)
+
+        # Verify it's a new instance
+        assert new_config is not config
+        # Verify user context is set
+        assert new_config.user_id == user_id
+        assert new_config.org_id == org_id
+        # Verify other values preserved
+        assert new_config.database_url == "test"
+        assert new_config.openai_api_key == "sk-test"
+        # Verify original unchanged
+        assert config.user_id is None
+        assert config.org_id is None
+
+    def test_with_user_org_id_optional(self) -> None:
+        """Test with_user works without org_id."""
+        import uuid
+
+        config = Config(database_url="test")
+        user_id = uuid.uuid4()
+
+        new_config = config.with_user(user_id)
+
+        assert new_config.user_id == user_id
+        assert new_config.org_id is None

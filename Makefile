@@ -22,17 +22,8 @@ format:
 	uv run ruff check --fix src/ tests/
 	uv run ruff format src/ tests/
 
-# Lint scripts (legacy code, has issues)
-lint-scripts:
-	uv run ruff check scripts/
-	uv run ruff format --check scripts/
-
 type-check:
 	uv run mypy src/ --strict
-
-# For current state (scripts only, before restructure)
-type-check-scripts:
-	uv run mypy scripts/
 
 # =============================================================================
 # Testing
@@ -52,38 +43,23 @@ coverage:
 	@echo ""
 	@echo "Coverage report: htmlcov/index.html"
 
-# For current state (scripts only, before restructure)
-coverage-scripts:
-	uv run pytest tests/ -v --cov=scripts --cov-report=term-missing --cov-report=html --cov-fail-under=100
-	@echo ""
-	@echo "Coverage report: htmlcov/index.html"
-
 # =============================================================================
 # All Checks (What pre-commit runs)
 # =============================================================================
 
-# Full check (after restructure)
 check: lint type-check test coverage
 	@echo ""
 	@echo "All checks passed!"
-
-# Check for current state (scripts only)
-check-scripts: type-check-scripts
-	@echo ""
-	@echo "Type checks passed!"
 
 # =============================================================================
 # Pipeline
 # =============================================================================
 
 run:
-	uv run python scripts/onboard_data.py
+	uv run rl-emails
 
 status:
-	uv run python scripts/onboard_data.py --status
-
-validate:
-	uv run python scripts/validate_data.py
+	uv run rl-emails --status
 
 # =============================================================================
 # Maintenance
@@ -108,8 +84,7 @@ help:
 	@echo "Code Quality:"
 	@echo "  make lint             Run ruff linter"
 	@echo "  make format           Auto-fix formatting"
-	@echo "  make type-check       Run mypy strict (src/)"
-	@echo "  make type-check-scripts  Run mypy (scripts/)"
+	@echo "  make type-check       Run mypy strict"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test             Run all tests"
@@ -119,12 +94,10 @@ help:
 	@echo ""
 	@echo "All Checks:"
 	@echo "  make check            Run all checks (lint + type + test + coverage)"
-	@echo "  make check-scripts    Run type checks on scripts/"
 	@echo ""
 	@echo "Pipeline:"
 	@echo "  make run              Run the full pipeline"
 	@echo "  make status           Check pipeline status"
-	@echo "  make validate         Validate data"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean            Remove cache files"
