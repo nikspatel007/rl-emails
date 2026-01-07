@@ -16,6 +16,7 @@ Examples:
     python run_llm_classification.py --all 10       # Process all remaining
     python run_llm_classification.py --status       # Show current status
 """
+from __future__ import annotations
 
 import json
 import os
@@ -23,6 +24,7 @@ import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from typing import Any
 
 import psycopg2
 from dotenv import load_dotenv
@@ -74,7 +76,7 @@ Date: {date}
 }}"""
 
 
-def get_model(model_arg=None):
+def get_model(model_arg: str | None = None) -> str | None:
     """Get model based on argument or available API keys."""
     if model_arg and model_arg in MODELS:
         return MODELS[model_arg]
@@ -87,7 +89,7 @@ def get_model(model_arg=None):
     return None
 
 
-def get_status(conn):
+def get_status(conn: psycopg2.extensions.connection) -> dict[str, int]:
     """Get current processing status."""
     cur = conn.cursor()
 
@@ -99,11 +101,13 @@ def get_status(conn):
         AND e.is_sent = FALSE
         AND LENGTH(e.body_text) > 50
     """)
-    total = cur.fetchone()[0]
+    row = cur.fetchone()
+    total = row[0] if row else 0
 
     # Already processed
     cur.execute("SELECT COUNT(*) FROM email_llm_classification")
-    processed = cur.fetchone()[0]
+    row = cur.fetchone()
+    processed = row[0] if row else 0
 
     # Remaining
     remaining = total - processed
@@ -111,7 +115,9 @@ def get_status(conn):
     return {"total": total, "processed": processed, "remaining": remaining}
 
 
-def get_emails_to_process(conn, limit=50):
+def get_emails_to_process(
+    conn: psycopg2.extensions.connection, limit: int = 50
+) -> list[tuple[Any, ...]]:
     """Get emails that need LLM classification with user/priority context."""
     cur = conn.cursor()
 
@@ -147,7 +153,7 @@ def get_emails_to_process(conn, limit=50):
     return cur.fetchall()
 
 
-def build_prompt(email_data):
+def build_prompt(email_data: tuple[Any, ...]) -> str:
     """Build the LLM prompt for an email with ML context."""
     email_id, from_email, subject, date_parsed, body_preview, \
         relationship, reply_rate, is_service, llm_priority, actual_action, thread_id, \
@@ -186,7 +192,7 @@ def build_prompt(email_data):
     return prompt
 
 
-def classify_email(email_data):
+def classify_email(email_data: tuple[Any, ...]) -> dict[str, Any]:
     """Run LLM classification on a single email."""
     email_id = email_data[0]
     thread_id = email_data[10]  # thread_id is still at index 10
@@ -194,8 +200,9 @@ def classify_email(email_data):
     prompt = build_prompt(email_data)
 
     try:
-        # Build completion kwargs
-        completion_kwargs = {
+        # Build completion kwargs - MODEL is set by main() before this runs
+        assert MODEL is not None, "MODEL must be set before calling classify_email"
+        completion_kwargs: dict[str, Any] = {
             "model": MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 200,
@@ -244,7 +251,7 @@ def classify_email(email_data):
         }
 
 
-def save_result(cur, result):
+def save_result(cur: psycopg2.extensions.cursor, result: dict[str, Any]) -> bool:
     """Save a classification result to the database."""
     if result["error"] or not result["result"]:
         return False
@@ -297,7 +304,9 @@ def save_result(cur, result):
         return False
 
 
-def process_batch(emails, workers, conn):
+def process_batch(
+    emails: list[tuple[Any, ...]], workers: int, conn: psycopg2.extensions.connection
+) -> dict[str, Any]:
     """Process a batch of emails in parallel and save results."""
     results = []
     total_tokens = 0
@@ -328,7 +337,7 @@ def process_batch(emails, workers, conn):
     return {"results": results, "tokens": total_tokens, "errors": errors, "saved": saved}
 
 
-def main():
+def main() -> None:
     global MODEL
 
     # Handle --status flag

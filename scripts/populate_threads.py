@@ -24,12 +24,14 @@ Usage:
     # With custom database URL:
     python scripts/populate_threads.py --db-url postgresql://user:pass@host:port/db
 """
+from __future__ import annotations
 
 import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any
+
 from dotenv import load_dotenv
 
 # Load .env from project root
@@ -45,7 +47,7 @@ except ImportError:
 async def populate_threads(
     conn: asyncpg.Connection,
     batch_size: int = 1000,
-) -> dict:
+) -> dict[str, int]:
     """Populate threads table with aggregated email data.
 
     Args:
@@ -158,7 +160,7 @@ async def populate_threads(
     return stats
 
 
-async def verify_results(conn: asyncpg.Connection):
+async def verify_results(conn: asyncpg.Connection) -> None:
     """Verify the population results."""
     print("\n=== Verification ===")
 
@@ -188,7 +190,7 @@ async def verify_results(conn: asyncpg.Connection):
             print("Avg thread duration: N/A")
 
 
-async def main():
+async def main() -> None:
     """Main entry point."""
     # Required environment variable
     db_url = os.environ.get('DATABASE_URL')

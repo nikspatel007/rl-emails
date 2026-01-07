@@ -13,13 +13,14 @@ Usage:
     python scripts/cluster_emails.py --dimension people # Run specific dimension
     python scripts/cluster_emails.py --analyze          # Show cluster analysis
 """
+from __future__ import annotations
 
 import argparse
 import os
 import sys
 import time
 from collections import Counter
-from datetime import datetime
+from typing import Any
 
 import numpy as np
 import psycopg2
@@ -31,13 +32,13 @@ from sklearn.preprocessing import StandardScaler
 load_dotenv()
 
 try:
-    import hdbscan
+    import hdbscan  # type: ignore[import-not-found]
     HAS_HDBSCAN = True
 except ImportError:
     HAS_HDBSCAN = False
 
 try:
-    import umap
+    import umap  # type: ignore[import-not-found]
     HAS_UMAP = True
 except ImportError:
     HAS_UMAP = False
@@ -50,7 +51,7 @@ DB_URL = os.environ.get("DATABASE_URL")
 # Database Setup
 # =============================================================================
 
-def create_tables(conn):
+def create_tables(conn: psycopg2.extensions.connection) -> None:
     """Create clustering tables if they don't exist."""
     with conn.cursor() as cur:
         # Main clustering results
@@ -106,7 +107,7 @@ def create_tables(conn):
 # Data Loading
 # =============================================================================
 
-def load_people_features(conn) -> tuple[list[int], np.ndarray]:
+def load_people_features(conn: psycopg2.extensions.connection) -> tuple[list[int], np.ndarray]:
     """Load features for people clustering."""
     with conn.cursor() as cur:
         cur.execute("""
@@ -130,7 +131,7 @@ def load_people_features(conn) -> tuple[list[int], np.ndarray]:
     return email_ids, features
 
 
-def load_embeddings(conn) -> tuple[list[int], np.ndarray]:
+def load_embeddings(conn: psycopg2.extensions.connection) -> tuple[list[int], np.ndarray]:
     """Load embeddings for content clustering."""
     with conn.cursor() as cur:
         cur.execute("""
@@ -151,7 +152,7 @@ def load_embeddings(conn) -> tuple[list[int], np.ndarray]:
     return email_ids, np.array(embeddings)
 
 
-def load_behavior_features(conn) -> tuple[list[int], np.ndarray]:
+def load_behavior_features(conn: psycopg2.extensions.connection) -> tuple[list[int], np.ndarray]:
     """Load features for behavior clustering."""
     with conn.cursor() as cur:
         cur.execute("""
@@ -183,7 +184,7 @@ def load_behavior_features(conn) -> tuple[list[int], np.ndarray]:
     return email_ids, features
 
 
-def load_service_features(conn) -> tuple[list[int], np.ndarray]:
+def load_service_features(conn: psycopg2.extensions.connection) -> tuple[list[int], np.ndarray]:
     """Load features for service clustering."""
     with conn.cursor() as cur:
         cur.execute("""
@@ -213,7 +214,7 @@ def load_service_features(conn) -> tuple[list[int], np.ndarray]:
     return email_ids, features
 
 
-def load_temporal_features(conn) -> tuple[list[int], np.ndarray]:
+def load_temporal_features(conn: psycopg2.extensions.connection) -> tuple[list[int], np.ndarray]:
     """Load features for temporal clustering."""
     with conn.cursor() as cur:
         cur.execute("""
@@ -239,7 +240,7 @@ def load_temporal_features(conn) -> tuple[list[int], np.ndarray]:
 # Clustering Functions
 # =============================================================================
 
-def cluster_people(conn) -> dict:
+def cluster_people(conn: psycopg2.extensions.connection) -> dict[str, Any]:
     """Cluster by relationship patterns."""
     print("\n" + "=" * 60)
     print("PEOPLE CLUSTERING")
@@ -279,7 +280,7 @@ def cluster_people(conn) -> dict:
     }
 
 
-def cluster_content(conn) -> dict:
+def cluster_content(conn: psycopg2.extensions.connection) -> dict[str, Any]:
     """Cluster by semantic similarity (embeddings)."""
     print("\n" + "=" * 60)
     print("CONTENT CLUSTERING")
@@ -341,7 +342,7 @@ def cluster_content(conn) -> dict:
     }
 
 
-def cluster_behavior(conn) -> dict:
+def cluster_behavior(conn: psycopg2.extensions.connection) -> dict[str, Any]:
     """Cluster by action patterns."""
     print("\n" + "=" * 60)
     print("BEHAVIOR CLUSTERING")
@@ -375,7 +376,7 @@ def cluster_behavior(conn) -> dict:
     }
 
 
-def cluster_service(conn) -> dict:
+def cluster_service(conn: psycopg2.extensions.connection) -> dict[str, Any]:
     """Cluster by service type."""
     print("\n" + "=" * 60)
     print("SERVICE CLUSTERING")
@@ -409,7 +410,7 @@ def cluster_service(conn) -> dict:
     }
 
 
-def cluster_temporal(conn) -> dict:
+def cluster_temporal(conn: psycopg2.extensions.connection) -> dict[str, Any]:
     """Cluster by time patterns."""
     print("\n" + "=" * 60)
     print("TEMPORAL CLUSTERING")
@@ -447,7 +448,7 @@ def cluster_temporal(conn) -> dict:
 # Save Results
 # =============================================================================
 
-def save_clusters(conn, results: dict):
+def save_clusters(conn: psycopg2.extensions.connection, results: dict[str, Any]) -> None:
     """Save all clustering results to database."""
     print("\n" + "=" * 60)
     print("SAVING RESULTS")
@@ -517,7 +518,7 @@ def save_clusters(conn, results: dict):
     print(f"✓ Saved {len(data)} cluster assignments")
 
 
-def compute_cluster_metadata(conn):
+def compute_cluster_metadata(conn: psycopg2.extensions.connection) -> None:
     """Compute and save cluster metadata."""
     print("\nComputing cluster metadata...")
 
@@ -555,7 +556,8 @@ def compute_cluster_metadata(conn):
                     WHERE {col} = %s
                     LIMIT 1
                 """, (cluster_id,))
-                rep_id = cur.fetchone()[0]
+                rep_row = cur.fetchone()
+                rep_id = rep_row[0] if rep_row else None
 
                 cur.execute("""
                     INSERT INTO cluster_metadata
@@ -578,7 +580,7 @@ def compute_cluster_metadata(conn):
 # Analysis
 # =============================================================================
 
-def analyze_clusters(conn):
+def analyze_clusters(conn: psycopg2.extensions.connection) -> None:
     """Show cluster analysis."""
     print("\n" + "=" * 70)
     print("CLUSTER ANALYSIS")
@@ -643,7 +645,7 @@ def analyze_clusters(conn):
 # Main
 # =============================================================================
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="Multi-dimensional email clustering")
     parser.add_argument("--dimension", "-d", choices=["people", "content", "behavior", "service", "temporal"],
                         help="Run specific dimension only")

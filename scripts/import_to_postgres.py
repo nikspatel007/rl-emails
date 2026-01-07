@@ -1,4 +1,6 @@
 """Import parsed email data into PostgreSQL database."""
+from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -6,8 +8,6 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-from zoneinfo import ZoneInfo
 
 import asyncpg
 from dotenv import load_dotenv
@@ -19,7 +19,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 BATCH_SIZE = 500
 
 
-def sanitize_text(text: Optional[str]) -> Optional[str]:
+def sanitize_text(text: str | None) -> str | None:
     """Remove null bytes and other problematic characters from text."""
     if text is None:
         return None
@@ -30,12 +30,12 @@ def sanitize_text(text: Optional[str]) -> Optional[str]:
     return text
 
 
-def parse_email_address(raw: str) -> tuple[Optional[str], Optional[str]]:
+def parse_email_address(raw: str) -> tuple[str | None, str | None]:
     """Extract email and name from a raw address string."""
     if not raw:
         return None, None
 
-    raw = sanitize_text(raw)
+    raw = sanitize_text(raw) or ""
 
     # Pattern: "Name" <email@example.com> or Name <email@example.com>
     match = re.search(r'([^<]*)<([^>]+)>', raw)
@@ -56,7 +56,7 @@ def extract_all_emails(raw: str) -> list[str]:
     if not raw:
         return []
 
-    raw = sanitize_text(raw)
+    raw = sanitize_text(raw) or ""
     emails = []
 
     # Split by common delimiters
@@ -69,12 +69,12 @@ def extract_all_emails(raw: str) -> list[str]:
     return emails
 
 
-def parse_date(date_str: Optional[str]) -> Optional[datetime]:
+def parse_date(date_str: str | None) -> datetime | None:
     """Parse date string to datetime, handling various formats."""
     if not date_str:
         return None
 
-    date_str = sanitize_text(date_str)
+    date_str = sanitize_text(date_str) or ""
 
     # Common date formats
     formats = [
@@ -99,7 +99,7 @@ def parse_date(date_str: Optional[str]) -> Optional[datetime]:
     return None
 
 
-def generate_preview(body: Optional[str], max_length: int = 200) -> Optional[str]:
+def generate_preview(body: str | None, max_length: int = 200) -> str | None:
     """Generate a preview from body text."""
     if not body:
         return None
@@ -111,28 +111,28 @@ def generate_preview(body: Optional[str], max_length: int = 200) -> Optional[str
     return preview
 
 
-def count_words(text: Optional[str]) -> int:
+def count_words(text: str | None) -> int:
     """Count words in text."""
     if not text:
         return 0
     return len(text.split())
 
 
-def is_sent_email(from_email: Optional[str], labels: list[str]) -> bool:
+def is_sent_email(from_email: str | None, labels: list[str]) -> bool:
     """Determine if email was sent by user."""
     if not labels:
         return False
     return 'SENT' in labels or 'Sent' in [l.title() for l in labels]
 
 
-async def create_schema(conn: asyncpg.Connection, schema_path: Path):
+async def create_schema(conn: asyncpg.Connection, schema_path: Path) -> None:
     """Execute schema creation SQL."""
     schema_sql = schema_path.read_text()
     await conn.execute(schema_sql)
     print("Schema created successfully")
 
 
-async def import_emails(conn: asyncpg.Connection, jsonl_path: Path):
+async def import_emails(conn: asyncpg.Connection, jsonl_path: Path) -> int:
     """Import emails from JSONL to database."""
 
     # Read all emails
@@ -236,7 +236,7 @@ async def import_emails(conn: asyncpg.Connection, jsonl_path: Path):
     return imported
 
 
-async def verify_import(conn: asyncpg.Connection):
+async def verify_import(conn: asyncpg.Connection) -> None:
     """Verify import by checking counts and sample data."""
     raw_count = await conn.fetchval("SELECT COUNT(*) FROM raw_emails")
     email_count = await conn.fetchval("SELECT COUNT(*) FROM emails")
@@ -258,8 +258,7 @@ async def verify_import(conn: asyncpg.Connection):
         print(f"  {row['date_parsed']}: {row['from_email']} - {row['subject'][:50] if row['subject'] else '(no subject)'}...")
 
 
-async def main():
-    import os
+async def main() -> None:
     from urllib.parse import urlparse
 
     # Required environment variables

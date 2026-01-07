@@ -10,12 +10,13 @@ Usage:
     python scripts/compute_priority.py              # Compute all priorities
     python scripts/compute_priority.py --analyze   # Show analysis only
 """
+from __future__ import annotations
 
 import argparse
 import os
 import sys
 import time
-from datetime import datetime
+from typing import Any
 
 import numpy as np
 import psycopg2
@@ -32,7 +33,7 @@ DB_URL = os.environ.get("DATABASE_URL")
 # Database Setup
 # =============================================================================
 
-def create_tables(conn):
+def create_tables(conn: psycopg2.extensions.connection) -> None:
     """Create priority table if it doesn't exist."""
     with conn.cursor() as cur:
         cur.execute("""
@@ -72,7 +73,7 @@ def create_tables(conn):
 # Component Score Computations
 # =============================================================================
 
-def compute_feature_scores(conn) -> dict[int, float]:
+def compute_feature_scores(conn: psycopg2.extensions.connection) -> dict[int, float]:
     """Compute feature-based scores from Phase 2 data."""
     print("\nComputing feature scores...")
 
@@ -108,7 +109,7 @@ def compute_feature_scores(conn) -> dict[int, float]:
     return scores
 
 
-def compute_replied_similarity(conn) -> dict[int, float]:
+def compute_replied_similarity(conn: psycopg2.extensions.connection) -> dict[int, float]:
     """Compute similarity to replied emails using embeddings."""
     print("\nComputing replied similarity...")
 
@@ -122,7 +123,7 @@ def compute_replied_similarity(conn) -> dict[int, float]:
         """)
         result = cur.fetchone()
 
-        if result[0] is None:
+        if result is None or result[0] is None:
             print("  WARNING: No replied emails found")
             return {}
 
@@ -159,7 +160,7 @@ def compute_replied_similarity(conn) -> dict[int, float]:
     return similarities
 
 
-def compute_cluster_novelty(conn) -> dict[int, float]:
+def compute_cluster_novelty(conn: psycopg2.extensions.connection) -> dict[int, float]:
     """Compute how novel each email is within its content cluster."""
     print("\nComputing cluster novelty...")
 
@@ -204,7 +205,7 @@ def compute_cluster_novelty(conn) -> dict[int, float]:
     return novelties
 
 
-def compute_sender_novelty(conn) -> dict[int, float]:
+def compute_sender_novelty(conn: psycopg2.extensions.connection) -> dict[int, float]:
     """Compute how unusual each email is for its sender."""
     print("\nComputing sender novelty...")
 
@@ -255,11 +256,11 @@ def compute_sender_novelty(conn) -> dict[int, float]:
 # =============================================================================
 
 def compute_priority_scores(
-    feature_scores: dict,
-    replied_similarity: dict,
-    cluster_novelty: dict,
-    sender_novelty: dict
-) -> dict[int, dict]:
+    feature_scores: dict[int, float],
+    replied_similarity: dict[int, float],
+    cluster_novelty: dict[int, float],
+    sender_novelty: dict[int, float]
+) -> dict[int, dict[str, float]]:
     """Combine component scores into final priority."""
     print("\nComputing final priority scores...")
 
@@ -299,7 +300,7 @@ def compute_priority_scores(
     return results
 
 
-def determine_llm_flags(conn, priorities: dict) -> dict[int, tuple[bool, str]]:
+def determine_llm_flags(conn: psycopg2.extensions.connection, priorities: dict[int, dict[str, float]]) -> dict[int, tuple[bool, str | None]]:
     """Determine which emails need LLM analysis."""
     print("\nDetermining LLM analysis flags...")
 
@@ -363,7 +364,7 @@ def determine_llm_flags(conn, priorities: dict) -> dict[int, tuple[bool, str]]:
 # Save Results
 # =============================================================================
 
-def save_priorities(conn, priorities: dict, llm_flags: dict):
+def save_priorities(conn: psycopg2.extensions.connection, priorities: dict[int, dict[str, float]], llm_flags: dict[int, tuple[bool, str | None]]) -> None:
     """Save priority scores to database."""
     print("\nSaving priorities to database...")
 
@@ -406,7 +407,7 @@ def save_priorities(conn, priorities: dict, llm_flags: dict):
 # Analysis
 # =============================================================================
 
-def analyze_priorities(conn):
+def analyze_priorities(conn: psycopg2.extensions.connection) -> None:
     """Show priority analysis."""
     print("\n" + "=" * 70)
     print("PRIORITY ANALYSIS")
@@ -484,9 +485,11 @@ def analyze_priorities(conn):
         cur.execute("""
             SELECT COUNT(*) FROM email_priority WHERE needs_llm_analysis = TRUE
         """)
-        total_llm = cur.fetchone()[0]
+        llm_row = cur.fetchone()
+        total_llm = llm_row[0] if llm_row else 0
         cur.execute("SELECT COUNT(*) FROM email_priority")
-        total = cur.fetchone()[0]
+        total_row = cur.fetchone()
+        total = total_row[0] if total_row else 1  # Avoid division by zero
         print(f"\nTotal for LLM: {total_llm} / {total} ({total_llm * 100 / total:.1f}%)")
 
         # Component score correlations with reply
@@ -520,7 +523,7 @@ def analyze_priorities(conn):
 # Main
 # =============================================================================
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="Compute hybrid priority rankings")
     parser.add_argument("--analyze", "-a", action="store_true", help="Show analysis only")
     args = parser.parse_args()

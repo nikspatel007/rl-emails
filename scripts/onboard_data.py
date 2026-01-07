@@ -31,6 +31,7 @@ All configuration is read from .env:
     OPENAI_API_KEY - For embeddings (required)
     ANTHROPIC_API_KEY - For LLM classification (optional, uses OpenAI if not set)
 """
+from __future__ import annotations
 
 import argparse
 import os
@@ -38,6 +39,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import psycopg2
 from dotenv import dotenv_values
@@ -58,7 +60,7 @@ YOUR_EMAIL = config.get("YOUR_EMAIL")  # Required for Phase 1 (action labels)
 OPENAI_API_KEY = config.get("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = config.get("ANTHROPIC_API_KEY")
 
-def validate_config():
+def validate_config() -> None:
     """Validate required environment variables."""
     missing = []
     if not DATABASE_URL:
@@ -73,7 +75,7 @@ def validate_config():
         sys.exit(1)
 
 
-def run_command(cmd: list, description: str, cwd: Path = None) -> bool:
+def run_command(cmd: list[str], description: str, cwd: Path | None = None) -> bool:
     """Run a shell command."""
     print(f"\n{'='*60}")
     print(f"Stage: {description}")
@@ -92,7 +94,7 @@ def run_command(cmd: list, description: str, cwd: Path = None) -> bool:
     return True
 
 
-def run_script(name: str, args: list = None, description: str = None) -> bool:
+def run_script(name: str, args: list[str] | None = None, description: str | None = None) -> bool:
     """Run a pipeline script."""
     script_path = SCRIPTS_DIR / name
     if not script_path.exists():
@@ -126,7 +128,7 @@ def run_alembic_migrations() -> bool:
     )
 
 
-def check_api_keys() -> dict:
+def check_api_keys() -> dict[str, bool]:
     """Check which API keys are available."""
     return {
         "openai": bool(OPENAI_API_KEY),
@@ -134,47 +136,53 @@ def check_api_keys() -> dict:
     }
 
 
-def get_status() -> dict:
+def _fetch_count(cur: psycopg2.extensions.cursor) -> int:
+    """Helper to safely fetch a count from cursor."""
+    row = cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+def get_status() -> dict[str, Any]:
     """Get current pipeline status."""
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
 
-        status = {}
+        status: dict[str, Any] = {}
 
         # Emails
         try:
             cur.execute("SELECT COUNT(*) FROM emails WHERE is_sent = FALSE")
-            status["emails"] = cur.fetchone()[0]
-        except:
+            status["emails"] = _fetch_count(cur)
+        except Exception:
             status["emails"] = 0
 
         # Features
         try:
             cur.execute("SELECT COUNT(*) FROM email_features")
-            status["features"] = cur.fetchone()[0]
-        except:
+            status["features"] = _fetch_count(cur)
+        except Exception:
             status["features"] = 0
 
         # Embeddings
         try:
             cur.execute("SELECT COUNT(*) FROM email_embeddings")
-            status["embeddings"] = cur.fetchone()[0]
-        except:
+            status["embeddings"] = _fetch_count(cur)
+        except Exception:
             status["embeddings"] = 0
 
         # AI Classification
         try:
             cur.execute("SELECT COUNT(*) FROM email_ai_classification")
-            status["ai_classification"] = cur.fetchone()[0]
-        except:
+            status["ai_classification"] = _fetch_count(cur)
+        except Exception:
             status["ai_classification"] = 0
 
         # LLM Classification
         try:
             cur.execute("SELECT COUNT(*) FROM email_llm_classification")
-            status["llm_classification"] = cur.fetchone()[0]
-        except:
+            status["llm_classification"] = _fetch_count(cur)
+        except Exception:
             status["llm_classification"] = 0
 
         # Needs LLM
@@ -183,8 +191,8 @@ def get_status() -> dict:
                 SELECT COUNT(*) FROM email_ai_classification
                 WHERE predicted_handleability = 'needs_llm'
             """)
-            status["needs_llm"] = cur.fetchone()[0]
-        except:
+            status["needs_llm"] = _fetch_count(cur)
+        except Exception:
             status["needs_llm"] = 0
 
         conn.close()
@@ -194,7 +202,7 @@ def get_status() -> dict:
         return {"error": str(e)}
 
 
-def print_status():
+def print_status() -> None:
     """Print current pipeline status."""
     status = get_status()
 
@@ -250,34 +258,34 @@ def generate_report(parsed_jsonl: Path, duration: str) -> str:
 
         # Basic counts
         cur.execute("SELECT COUNT(*) FROM emails")
-        data['total_emails'] = cur.fetchone()[0]
+        data['total_emails'] = _fetch_count(cur)
 
         cur.execute("SELECT COUNT(*) FROM emails WHERE is_sent = TRUE")
-        data['sent_emails'] = cur.fetchone()[0]
+        data['sent_emails'] = _fetch_count(cur)
         data['received_emails'] = data['total_emails'] - data['sent_emails']
 
         cur.execute("SELECT MIN(date_parsed), MAX(date_parsed) FROM emails")
-        data['date_range'] = cur.fetchone()
+        data['date_range'] = cur.fetchone() or (None, None)
 
         # Thread data
         cur.execute("SELECT COUNT(*) FROM threads")
-        data['thread_count'] = cur.fetchone()[0]
+        data['thread_count'] = _fetch_count(cur)
 
         cur.execute("SELECT AVG(email_count), MAX(email_count), STDDEV(email_count) FROM threads")
-        data['thread_stats'] = cur.fetchone()
+        data['thread_stats'] = cur.fetchone() or (0, 0, 0)
 
         cur.execute("SELECT COUNT(*) FROM threads WHERE email_count = 1")
-        data['single_email_threads'] = cur.fetchone()[0]
+        data['single_email_threads'] = _fetch_count(cur)
 
         cur.execute("SELECT COUNT(*) FROM threads WHERE email_count > 5")
-        data['long_threads'] = cur.fetchone()[0]
+        data['long_threads'] = _fetch_count(cur)
 
         # Features data
         cur.execute("SELECT COUNT(*) FROM email_features")
-        data['features_count'] = cur.fetchone()[0]
+        data['features_count'] = _fetch_count(cur)
 
         cur.execute("SELECT COUNT(*) FROM email_features WHERE is_service_email = TRUE")
-        data['service_emails'] = cur.fetchone()[0]
+        data['service_emails'] = _fetch_count(cur)
 
         cur.execute("""
             SELECT service_type, COUNT(*) FROM email_features
@@ -295,15 +303,15 @@ def generate_report(parsed_jsonl: Path, duration: str) -> str:
         data['top_senders'] = cur.fetchall()
 
         cur.execute("SELECT COUNT(DISTINCT from_email) FROM emails WHERE is_sent = FALSE")
-        data['unique_senders'] = cur.fetchone()[0]
+        data['unique_senders'] = _fetch_count(cur)
 
         # Embeddings
         cur.execute("SELECT COUNT(*) FROM email_embeddings")
-        data['embeddings_count'] = cur.fetchone()[0]
+        data['embeddings_count'] = _fetch_count(cur)
 
         # AI Classification
         cur.execute("SELECT COUNT(*) FROM email_ai_classification")
-        data['ai_class_count'] = cur.fetchone()[0]
+        data['ai_class_count'] = _fetch_count(cur)
 
         cur.execute("""
             SELECT predicted_handleability, COUNT(*) FROM email_ai_classification
@@ -313,7 +321,7 @@ def generate_report(parsed_jsonl: Path, duration: str) -> str:
 
         # LLM Classification
         cur.execute("SELECT COUNT(*) FROM email_llm_classification")
-        data['llm_class_count'] = cur.fetchone()[0]
+        data['llm_class_count'] = _fetch_count(cur)
 
         if data['llm_class_count'] > 0:
             cur.execute("""
@@ -348,7 +356,7 @@ def generate_report(parsed_jsonl: Path, duration: str) -> str:
 
         # Important senders count
         cur.execute("SELECT COUNT(*) FROM users WHERE is_important_sender = true")
-        data['important_sender_count'] = cur.fetchone()[0]
+        data['important_sender_count'] = _fetch_count(cur)
 
         # Service engagement breakdown
         cur.execute("""
@@ -766,7 +774,7 @@ def generate_report(parsed_jsonl: Path, duration: str) -> str:
     return "\n".join(lines)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="One-shot data onboarding pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -820,6 +828,10 @@ def main():
             sys.exit(1)
         print_status()
         return
+
+    # After validate_config(), these are guaranteed non-None
+    assert MBOX_PATH is not None, "MBOX_PATH must be set"
+    assert DATABASE_URL is not None, "DATABASE_URL must be set"
 
     mbox_path = Path(MBOX_PATH)
     if not mbox_path.exists():

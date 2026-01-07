@@ -24,12 +24,14 @@ Required .env variables:
     DB_URL - PostgreSQL connection URL
     YOUR_EMAIL - Your email address for identifying sent emails
 """
+from __future__ import annotations
 
 import argparse
 import asyncio
 import os
 import sys
 from datetime import datetime, timedelta
+from typing import Any
 
 import asyncpg
 from dotenv import load_dotenv
@@ -317,7 +319,7 @@ async def compute_reverse_tracking(conn: asyncpg.Connection) -> int:
     return count
 
 
-async def enrich_emails(conn: asyncpg.Connection, your_emails: list[str]) -> dict:
+async def enrich_emails(conn: asyncpg.Connection, your_emails: list[str]) -> dict[str, int]:
     """Run full enrichment pipeline on emails table."""
 
     stats = {
@@ -391,7 +393,7 @@ async def enrich_emails(conn: asyncpg.Connection, your_emails: list[str]) -> dic
     return stats
 
 
-async def verify_results(conn: asyncpg.Connection):
+async def verify_results(conn: asyncpg.Connection) -> None:
     """Verify enrichment results."""
     print("\n" + "=" * 60)
     print("ENRICHMENT RESULTS")
@@ -476,7 +478,7 @@ async def verify_results(conn: asyncpg.Connection):
     print("=" * 60)
 
 
-async def main():
+async def main() -> None:
     parser = argparse.ArgumentParser(
         description='Enrich emails with action labels directly in PostgreSQL'
     )

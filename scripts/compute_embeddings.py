@@ -12,6 +12,7 @@ Features:
 - Truncates long emails to fit context window
 - Resume capability (skips already-embedded emails)
 """
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -23,8 +24,12 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    import tiktoken
 
 # Load .env from project root
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -34,10 +39,15 @@ from psycopg2.extras import execute_values
 from bs4 import BeautifulSoup
 
 try:
-    from mailparser_reply import EmailReplyParser
+    from mailparser_reply import EmailReplyParser  # type: ignore[import-not-found]
     HAS_MAIL_PARSER = True
 except ImportError:
     HAS_MAIL_PARSER = False
+    class EmailReplyParser:  # type: ignore[no-redef]
+        """Stub for when mail-parser-reply is not installed."""
+        @staticmethod
+        def read(text: str) -> Any:
+            return None
 
 try:
     from litellm import embedding
@@ -46,8 +56,8 @@ except ImportError:
     HAS_LITELLM = False
 
 try:
-    import tiktoken
-    TOKENIZER = tiktoken.get_encoding("cl100k_base")  # OpenAI's encoding
+    import tiktoken as _tiktoken
+    TOKENIZER: tiktoken.Encoding | None = _tiktoken.get_encoding("cl100k_base")
     HAS_TIKTOKEN = True
 except ImportError:
     TOKENIZER = None
@@ -164,11 +174,11 @@ def strip_quoted_replies(text: str) -> str:
     if not text:
         return ""
 
-    if HAS_MAIL_PARSER:
+    if HAS_MAIL_PARSER and EmailReplyParser is not None:
         try:
             parsed = EmailReplyParser.read(text)
             # Get just the latest reply, stripped of quotes/signatures
-            clean = parsed.text_reply
+            clean: str = str(parsed.text_reply) if parsed.text_reply else ""
             if clean and len(clean.strip()) > 10:
                 return clean.strip()
         except Exception:
@@ -311,7 +321,9 @@ def compute_content_hash(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
 
-def get_unprocessed_emails(conn, limit: int = 1000) -> list[dict]:
+def get_unprocessed_emails(
+    conn: psycopg2.extensions.connection, limit: int = 1000
+) -> list[dict[str, Any]]:
     """Get emails that don't have embeddings yet, with features."""
     with conn.cursor() as cur:
         cur.execute("""
@@ -339,19 +351,24 @@ def get_unprocessed_emails(conn, limit: int = 1000) -> list[dict]:
         } for row in rows]
 
 
-def get_embedding_counts(conn) -> tuple[int, int]:
+def get_embedding_counts(conn: psycopg2.extensions.connection) -> tuple[int, int]:
     """Get total eligible and embedded counts."""
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM emails WHERE is_sent = FALSE")
-        total = cur.fetchone()[0]
+        row = cur.fetchone()
+        total = row[0] if row else 0
 
         cur.execute("SELECT COUNT(*) FROM email_embeddings")
-        embedded = cur.fetchone()[0]
+        row = cur.fetchone()
+        embedded = row[0] if row else 0
 
         return total, embedded
 
 
-def save_embeddings_to_db(conn, embeddings_data: list[tuple]) -> int:
+def save_embeddings_to_db(
+    conn: psycopg2.extensions.connection,
+    embeddings_data: list[tuple[int, list[float], int, str]],
+) -> int:
     """Save embeddings to email_embeddings table."""
     if not embeddings_data:
         return 0
@@ -381,7 +398,9 @@ def save_embeddings_to_db(conn, embeddings_data: list[tuple]) -> int:
 # Backup Operations
 # =============================================================================
 
-def save_embeddings_to_jsonl(embeddings_data: list[tuple], batch_num: int):
+def save_embeddings_to_jsonl(
+    embeddings_data: list[tuple[int, list[float], int, str]], batch_num: int
+) -> Path | None:
     """Save embeddings to local JSONL file for backup."""
     if not embeddings_data:
         return None
@@ -403,7 +422,9 @@ def save_embeddings_to_jsonl(embeddings_data: list[tuple], batch_num: int):
     return backup_file
 
 
-def save_metadata(total_processed: int, total_time: float, total_emails: int, workers: int):
+def save_metadata(
+    total_processed: int, total_time: float, total_emails: int, workers: int
+) -> Path:
     """Save metadata about the embedding run."""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -429,7 +450,9 @@ def save_metadata(total_processed: int, total_time: float, total_emails: int, wo
 # Parallel Processing
 # =============================================================================
 
-async def generate_single_embedding(text: str, semaphore: asyncio.Semaphore) -> list[float]:
+async def generate_single_embedding(
+    text: str, semaphore: asyncio.Semaphore
+) -> list[float]:
     """Generate embedding for a single text using LiteLLM."""
     async with semaphore:
         loop = asyncio.get_event_loop()
@@ -437,14 +460,18 @@ async def generate_single_embedding(text: str, semaphore: asyncio.Semaphore) -> 
             None,
             lambda: embedding(model=EMBEDDING_MODEL, input=[text])
         )
-        return response.data[0]["embedding"]
+        return list(response.data[0]["embedding"])
 
 
-async def process_emails_parallel(emails: list[dict], workers: int) -> list[tuple]:
+async def process_emails_parallel(
+    emails: list[dict[str, Any]], workers: int
+) -> list[tuple[int, list[float], int, str]]:
     """Process emails in parallel with specified number of workers."""
     semaphore = asyncio.Semaphore(workers)
 
-    async def process_one(email: dict) -> tuple | None:
+    async def process_one(
+        email: dict[str, Any]
+    ) -> tuple[int, list[float], int, str] | None:
         try:
             text = build_embedding_text(
                 email["subject"] or "",
@@ -477,7 +504,7 @@ async def process_emails_parallel(emails: list[dict], workers: int) -> list[tupl
 # Main Entry Point
 # =============================================================================
 
-async def main_async(args):
+async def main_async(args: argparse.Namespace) -> int:
     """Main async entry point."""
     workers = args.workers
     batch_size = args.batch_size
@@ -590,7 +617,7 @@ async def main_async(args):
     return 0
 
 
-def main():
+def main() -> int:
     if not HAS_LITELLM:
         print("ERROR: litellm package not installed")
         print("Install with: uv pip install litellm")

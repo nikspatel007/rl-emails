@@ -12,16 +12,16 @@ Usage:
     python scripts/checkpoint.py list               # List checkpoints
     python scripts/checkpoint.py restore <name>     # Restore from checkpoint
 """
+from __future__ import annotations
 
 import argparse
 import json
 import os
-import shutil
 import subprocess
-import sys
 import tarfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import psycopg2
 
@@ -34,31 +34,34 @@ PG_DUMP = "/opt/homebrew/Cellar/postgresql@16/16.11/bin/pg_dump"
 PSQL = "/opt/homebrew/Cellar/postgresql@16/16.11/bin/psql"
 
 
-def get_db_stats() -> dict:
+def get_db_stats() -> dict[str, Any]:
     """Get current database statistics."""
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
 
-    stats = {}
+    stats: dict[str, Any] = {}
 
     cur.execute("SELECT COUNT(*) FROM email_embeddings")
-    stats["embedding_count"] = cur.fetchone()[0]
+    result = cur.fetchone()
+    stats["embedding_count"] = result[0] if result else 0
 
     cur.execute("SELECT COUNT(*) FROM emails WHERE is_sent = FALSE")
-    stats["email_count"] = cur.fetchone()[0]
+    result = cur.fetchone()
+    stats["email_count"] = result[0] if result else 0
 
     if stats["embedding_count"] > 0:
         cur.execute("SELECT MIN(token_count), AVG(token_count)::int, MAX(token_count) FROM email_embeddings")
         row = cur.fetchone()
-        stats["token_min"] = row[0]
-        stats["token_avg"] = row[1]
-        stats["token_max"] = row[2]
+        if row:
+            stats["token_min"] = row[0]
+            stats["token_avg"] = row[1]
+            stats["token_max"] = row[2]
 
     conn.close()
     return stats
 
 
-def create_checkpoint(name: str = None) -> Path:
+def create_checkpoint(name: str | None = None) -> Path | None:
     """Create a checkpoint with SQL dump and metadata."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     checkpoint_name = name or f"checkpoint_{timestamp}"
@@ -153,7 +156,7 @@ def create_checkpoint(name: str = None) -> Path:
     return archive_file
 
 
-def list_checkpoints():
+def list_checkpoints() -> None:
     """List available checkpoints."""
     print("Available checkpoints:")
     print()
@@ -184,7 +187,7 @@ def list_checkpoints():
             print(f"  {name} ({size:.1f} MB) - {mtime.strftime('%Y-%m-%d %H:%M')}")
 
 
-def restore_checkpoint(name: str, method: str = "sql"):
+def restore_checkpoint(name: str, method: str = "sql") -> bool:
     """Restore from a checkpoint."""
     archive_file = CHECKPOINTS_DIR / f"{name}.tar.gz"
 
@@ -201,8 +204,8 @@ def restore_checkpoint(name: str, method: str = "sql"):
 
     # Extract archive to temp dir
     import tempfile
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
+    with tempfile.TemporaryDirectory() as tmpdir_str:
+        tmpdir = Path(tmpdir_str)
 
         print("Extracting archive...")
         with tarfile.open(archive_file, "r:gz") as tar:
@@ -254,7 +257,7 @@ def restore_checkpoint(name: str, method: str = "sql"):
             jsonl_dir = tmpdir / "embeddings"
             if jsonl_dir.exists():
                 # Use the restore_embeddings module
-                from restore_embeddings import clear_embeddings, restore_from_jsonl
+                from restore_embeddings import clear_embeddings, restore_from_jsonl  # type: ignore[import-not-found]
 
                 conn = psycopg2.connect(DB_URL)
                 clear_embeddings(conn)
@@ -285,7 +288,7 @@ def restore_checkpoint(name: str, method: str = "sql"):
     return True
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Checkpoint management for email embeddings")
     subparsers = parser.add_subparsers(dest="command", help="Command")
 

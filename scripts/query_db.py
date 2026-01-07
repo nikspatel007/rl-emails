@@ -27,6 +27,7 @@ Example queries:
     SELECT ->sent_by->users.email AS sender, ->received_by->users.email AS recipients
     FROM emails WHERE from_email CONTAINS 'skilling' LIMIT 5
 """
+from __future__ import annotations
 
 import argparse
 import json
@@ -61,7 +62,7 @@ def format_result(result: Any, indent: int = 2) -> str:
     return str(result)
 
 
-def run_query(db: Surreal, query: str) -> None:
+def run_query(db: Any, query: str) -> None:
     """Execute a query and print results."""
     try:
         result = db.query(query)
@@ -73,7 +74,7 @@ def run_query(db: Surreal, query: str) -> None:
         print(f'Error: {e}', file=sys.stderr)
 
 
-def interactive_mode(db: Surreal, db_name: str) -> None:
+def interactive_mode(db: Any, db_name: str) -> None:
     """Run interactive query session."""
     print(f'Connected to {db_name} database')
     print('Type your SurrealQL queries, or:')
@@ -116,7 +117,7 @@ def interactive_mode(db: Surreal, db_name: str) -> None:
         run_query(db, query)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description='Interactive query tool for SurrealDB email databases',
         formatter_class=argparse.RawDescriptionHelpFormatter,

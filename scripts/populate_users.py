@@ -12,6 +12,7 @@ Extracts unique users from from_email, to_emails[], cc_emails[] and computes:
 - is_you: true for me@nik-patel.com variants
 - name: extracted from from_name field
 """
+from __future__ import annotations
 
 import argparse
 import os
@@ -27,12 +28,12 @@ DB_URL = os.environ.get("DATABASE_URL")
 YOUR_EMAIL = os.environ.get("YOUR_EMAIL", "").lower()
 
 
-def get_connection(db_url: str):
+def get_connection(db_url: str) -> psycopg2.extensions.connection:
     """Connect to PostgreSQL database."""
     return psycopg2.connect(db_url)
 
 
-def populate_users(conn) -> int:
+def populate_users(conn: psycopg2.extensions.connection) -> int:
     """Extract unique users and populate the users table.
 
     Returns the number of users created.
@@ -278,38 +279,45 @@ def populate_users(conn) -> int:
 
     # Get final count
     cur.execute("SELECT COUNT(*) FROM users")
-    count = cur.fetchone()[0]
+    row = cur.fetchone()
+    count: int = row[0] if row else 0
 
     cur.close()
     return count
 
 
-def print_stats(conn):
+def _fetch_count(cur: psycopg2.extensions.cursor) -> int:
+    """Helper to fetch a single count value."""
+    row = cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+def print_stats(conn: psycopg2.extensions.connection) -> None:
     """Print statistics about populated users."""
     cur = conn.cursor()
 
     print("\n=== User Population Stats ===")
 
     cur.execute("SELECT COUNT(*) FROM users")
-    print(f"Total users: {cur.fetchone()[0]}")
+    print(f"Total users: {_fetch_count(cur)}")
 
     cur.execute("SELECT COUNT(*) FROM users WHERE is_you = true")
-    print(f"Users marked as 'you': {cur.fetchone()[0]}")
+    print(f"Users marked as 'you': {_fetch_count(cur)}")
 
     cur.execute("SELECT COUNT(*) FROM users WHERE name IS NOT NULL AND name != ''")
-    print(f"Users with names: {cur.fetchone()[0]}")
+    print(f"Users with names: {_fetch_count(cur)}")
 
     cur.execute("SELECT COUNT(*) FROM users WHERE emails_from > 0")
-    print(f"Users who sent emails: {cur.fetchone()[0]}")
+    print(f"Users who sent emails: {_fetch_count(cur)}")
 
     cur.execute("SELECT COUNT(*) FROM users WHERE emails_to > 0")
-    print(f"Users who received emails: {cur.fetchone()[0]}")
+    print(f"Users who received emails: {_fetch_count(cur)}")
 
     cur.execute("SELECT COUNT(*) FROM users WHERE reply_count > 0")
-    print(f"Users who replied to emails: {cur.fetchone()[0]}")
+    print(f"Users who replied to emails: {_fetch_count(cur)}")
 
     cur.execute("SELECT COUNT(*) FROM users WHERE avg_response_time_seconds IS NOT NULL")
-    print(f"Users with response time data: {cur.fetchone()[0]}")
+    print(f"Users with response time data: {_fetch_count(cur)}")
 
     cur.execute("""
         SELECT email, name, emails_from, emails_to, reply_count,
@@ -351,7 +359,7 @@ def print_stats(conn):
     cur.close()
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Populate users table from email addresses'
     )
@@ -382,6 +390,8 @@ def main():
         print_stats(conn)
     finally:
         conn.close()
+
+    return 0
 
 
 if __name__ == '__main__':

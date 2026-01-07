@@ -12,10 +12,10 @@ Usage:
     python scripts/validate_data.py
     python scripts/validate_data.py --top 20
 """
+from __future__ import annotations
 
 import argparse
 import os
-from collections import defaultdict
 
 import psycopg2
 from dotenv import load_dotenv
@@ -25,17 +25,17 @@ load_dotenv()
 DB_URL = os.environ.get("DATABASE_URL")
 
 
-def get_connection():
+def get_connection() -> psycopg2.extensions.connection:
     return psycopg2.connect(DB_URL)
 
 
-def print_section(title):
+def print_section(title: str) -> None:
     print(f"\n{'='*70}")
     print(f" {title}")
     print('='*70)
 
 
-def important_people(conn, limit=15):
+def important_people(conn: psycopg2.extensions.connection, limit: int = 15) -> None:
     """Show who you actually respond to."""
     print_section("IMPORTANT PEOPLE (by reply behavior)")
 
@@ -78,11 +78,13 @@ def important_people(conn, limit=15):
             SUM(CASE WHEN is_important_sender THEN 1 ELSE 0 END) as important
         FROM users WHERE emails_from > 0 AND NOT is_you
     """)
-    total, important = cur.fetchone()
+    result = cur.fetchone()
+    total = result[0] if result else 0
+    important = result[1] if result else 0
     print(f"\nTotal senders: {total}, Marked important: {important}")
 
 
-def service_breakdown(conn, limit=20):
+def service_breakdown(conn: psycopg2.extensions.connection, limit: int = 20) -> None:
     """Show service emails broken down by what you engage with."""
     print_section("SERVICE EMAIL BREAKDOWN (by engagement)")
 
@@ -125,7 +127,7 @@ def service_breakdown(conn, limit=20):
         print(f"{domain_short:<35} {svc_short:<15} {total:<7} {replied:<8} {archived:<9} {ignored:<8} {importance or 0:>5.2f}")
 
 
-def what_you_ignore(conn, limit=15):
+def what_you_ignore(conn: psycopg2.extensions.connection, limit: int = 15) -> None:
     """Show high-volume senders you never respond to."""
     print_section("NOISE: High-volume senders you NEVER respond to")
 
@@ -158,7 +160,7 @@ def what_you_ignore(conn, limit=15):
         print(f"{sender_short:<50} {svc_short:<15} {total:<7} {archived:<9} {ignored}")
 
 
-def domain_analysis(conn, domain_filter=None):
+def domain_analysis(conn: psycopg2.extensions.connection, domain_filter: str | None = None) -> None:
     """Analyze a specific domain (e.g., chase.com) to see transaction vs marketing."""
     print_section(f"DOMAIN ANALYSIS: {domain_filter or 'all domains'}")
 
@@ -211,7 +213,7 @@ def domain_analysis(conn, domain_filter=None):
         print(f"{sender_short:<45} {svc_short:<15} {total:<7} {replied:<8} {archived:<9} {ignored:<8} {importance or 0:>4.2f}")
 
 
-def relationship_validation(conn):
+def relationship_validation(conn: psycopg2.extensions.connection) -> None:
     """Validate that relationship_strength predicts reply behavior."""
     print_section("RELATIONSHIP STRENGTH VALIDATION")
 
@@ -245,7 +247,7 @@ def relationship_validation(conn):
     print("\n✓ If reply rate correlates with tier, relationship_strength is working correctly.")
 
 
-def priority_validation(conn):
+def priority_validation(conn: psycopg2.extensions.connection) -> None:
     """Validate that priority_score identifies actionable emails."""
     print_section("PRIORITY SCORE VALIDATION")
 
@@ -279,7 +281,7 @@ def priority_validation(conn):
     print("\n✓ Higher priority tiers should have higher reply rates.")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Validate email data quality')
     parser.add_argument('--top', type=int, default=15, help='Number of results to show')
     parser.add_argument('--domain', type=str, help='Filter by domain (e.g., chase.com)')

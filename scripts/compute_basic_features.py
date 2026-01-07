@@ -16,6 +16,7 @@ Required .env variables:
     DATABASE_URL - PostgreSQL connection URL
     YOUR_EMAIL - Your email address
 """
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -23,7 +24,7 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any
 
 import asyncpg
 from bs4 import BeautifulSoup
@@ -108,8 +109,8 @@ def detect_service_email(
     from_email: str,
     subject: str,
     body: str,
-    headers: Optional[dict] = None,
-) -> tuple[bool, float, Optional[str]]:
+    headers: dict[str, Any] | None = None,
+) -> tuple[bool, float, str | None]:
     """Detect if email is from a service/automated sender.
 
     Returns:
@@ -279,15 +280,18 @@ async def create_email_features_table(conn: asyncpg.Connection) -> None:
     print("email_features table created/verified")
 
 
-async def compute_sender_stats(conn: asyncpg.Connection) -> dict:
+async def compute_sender_stats(
+    conn: asyncpg.Connection,
+) -> tuple[dict[str, dict[str, Any]], datetime]:
     """Pre-compute sender statistics for relationship features.
 
-    Returns dict: sender_email -> {
-        emails_7d, emails_30d, emails_90d, emails_all,
-        user_replied_count, total_received,
-        avg_response_time, user_initiated_count,
-        last_interaction_date, sender_replies_count
-    }
+    Returns tuple of (stats_dict, ref_date) where stats_dict maps:
+        sender_email -> {
+            emails_7d, emails_30d, emails_90d, emails_all,
+            user_replied_count, total_received,
+            avg_response_time, user_initiated_count,
+            last_interaction_date, sender_replies_count
+        }
     """
     print("Computing sender statistics...")
 
@@ -458,9 +462,9 @@ def compute_urgency_score(
 async def compute_features_batch(
     conn: asyncpg.Connection,
     email_ids: list[int],
-    sender_stats: dict,
+    sender_stats: dict[str, dict[str, Any]],
     ref_date: datetime,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Compute features for a batch of emails."""
 
     # Load email data
@@ -605,7 +609,7 @@ async def compute_features_batch(
 
 async def store_features_batch(
     conn: asyncpg.Connection,
-    features_list: list[dict],
+    features_list: list[dict[str, Any]],
 ) -> int:
     """Store computed features to database."""
     if not features_list:
@@ -778,7 +782,7 @@ async def verify_results(conn: asyncpg.Connection) -> None:
     print("=" * 60)
 
 
-async def run_pipeline(batch_size: int = 1000) -> dict:
+async def run_pipeline(batch_size: int = 1000) -> dict[str, Any]:
     """Run the feature computation pipeline."""
     print("=" * 60)
     print("Phase 2: Basic ML Features Computation")
@@ -850,7 +854,7 @@ async def run_pipeline(batch_size: int = 1000) -> dict:
         await conn.close()
 
 
-async def main():
+async def main() -> None:
     parser = argparse.ArgumentParser(
         description='Phase 2: Compute basic ML features'
     )

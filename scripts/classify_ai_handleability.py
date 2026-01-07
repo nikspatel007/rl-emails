@@ -10,14 +10,17 @@ Classifies emails into:
 
 This runs BEFORE any LLM calls to reduce cost.
 """
+from __future__ import annotations
 
 import json
 import os
-import psycopg2
+import sys
 from pathlib import Path
-from psycopg2.extras import execute_values
-from datetime import datetime
+from typing import Any
+
+import psycopg2
 from dotenv import load_dotenv
+from psycopg2.extras import execute_values
 
 # Load .env from project root
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -25,11 +28,12 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 DB_URL = os.environ.get("DATABASE_URL")
 if not DB_URL:
     print("ERROR: DATABASE_URL environment variable is required")
-    import sys
     sys.exit(1)
 
 
-def classify_email(email: dict, features: dict) -> tuple[str, str, dict]:
+def classify_email(
+    email: dict[str, Any], features: dict[str, Any]
+) -> tuple[str, str, dict[str, Any]]:
     """
     Rule-based classification of what AI could do with this email.
 
@@ -198,7 +202,7 @@ def classify_email(email: dict, features: dict) -> tuple[str, str, dict]:
     }
 
 
-def ensure_table(conn):
+def ensure_table(conn: psycopg2.extensions.connection) -> None:
     """Ensure the classification table exists (created by alembic) and is empty."""
     cur = conn.cursor()
     # Clear existing data for idempotent re-runs
@@ -207,7 +211,7 @@ def ensure_table(conn):
     print("Cleared email_ai_classification table for fresh classification")
 
 
-def run_classification(conn):
+def run_classification(conn: psycopg2.extensions.connection) -> int:
     """Run classification on all emails."""
     cur = conn.cursor()
 
@@ -286,7 +290,7 @@ def run_classification(conn):
     return len(results)
 
 
-def print_summary(conn):
+def print_summary(conn: psycopg2.extensions.connection) -> None:
     """Print classification summary."""
     cur = conn.cursor()
 
@@ -398,7 +402,7 @@ def print_summary(conn):
     print("\n" + "="*70)
 
 
-def main():
+def main() -> None:
     conn = psycopg2.connect(DB_URL)
 
     try:
