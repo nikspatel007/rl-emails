@@ -555,3 +555,186 @@ class TestCliModuleExecution:
                             break
 
         assert main_block_found, "Module should have if __name__ == '__main__' block"
+
+
+class TestParseArgsOnboard:
+    """Tests for onboard subcommand argument parsing."""
+
+    def test_onboard_subcommand(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test onboard subcommand is recognized."""
+        monkeypatch.setattr(
+            sys, "argv", ["rl-emails", "onboard", "--user", "123e4567-e89b-12d3-a456-426614174000"]
+        )
+        args = cli.parse_args()
+        assert args.command == "onboard"
+        assert args.user == "123e4567-e89b-12d3-a456-426614174000"
+
+    def test_onboard_quick_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test onboard --quick-only flag."""
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "rl-emails",
+                "onboard",
+                "--user",
+                "123e4567-e89b-12d3-a456-426614174000",
+                "--quick-only",
+            ],
+        )
+        args = cli.parse_args()
+        assert args.quick_only is True
+
+    def test_onboard_skip_embeddings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test onboard --skip-embeddings flag."""
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "rl-emails",
+                "onboard",
+                "--user",
+                "123e4567-e89b-12d3-a456-426614174000",
+                "--skip-embeddings",
+            ],
+        )
+        args = cli.parse_args()
+        assert args.skip_embeddings is True
+
+    def test_onboard_skip_llm(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test onboard --skip-llm flag."""
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "rl-emails",
+                "onboard",
+                "--user",
+                "123e4567-e89b-12d3-a456-426614174000",
+                "--skip-llm",
+            ],
+        )
+        args = cli.parse_args()
+        assert args.skip_llm is True
+
+    def test_onboard_llm_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test onboard --llm-limit flag."""
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "rl-emails",
+                "onboard",
+                "--user",
+                "123e4567-e89b-12d3-a456-426614174000",
+                "--llm-limit",
+                "50",
+            ],
+        )
+        args = cli.parse_args()
+        assert args.llm_limit == 50
+
+
+class TestOnboardUser:
+    """Tests for onboard_user function."""
+
+    @patch("rl_emails.cli.Config")
+    def test_onboard_invalid_uuid_exits(
+        self,
+        mock_config_cls: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Test onboard with invalid UUID causes exit."""
+        monkeypatch.setattr(sys, "argv", ["rl-emails", "onboard", "--user", "not-a-valid-uuid"])
+
+        mock_config = MagicMock()
+        mock_config_cls.from_env.return_value = mock_config
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli.main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Invalid UUID format" in captured.err
+
+    @patch("rl_emails.cli.asyncio.run")
+    @patch("rl_emails.cli.Config")
+    def test_onboard_prints_header(
+        self,
+        mock_config_cls: MagicMock,
+        mock_asyncio_run: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Test onboard prints header information."""
+        user_uuid = "123e4567-e89b-12d3-a456-426614174000"
+        monkeypatch.setattr(sys, "argv", ["rl-emails", "onboard", "--user", user_uuid])
+
+        mock_config = MagicMock()
+        mock_config_with_user = MagicMock()
+        mock_config.with_user.return_value = mock_config_with_user
+        mock_config_cls.from_env.return_value = mock_config
+
+        # asyncio.run will just complete without doing anything
+        mock_asyncio_run.return_value = None
+
+        cli.main()
+
+        captured = capsys.readouterr()
+        assert "Progressive User Onboarding" in captured.out
+        assert user_uuid in captured.out
+        assert "Quick Only: False" in captured.out
+
+    @patch("rl_emails.cli.asyncio.run")
+    @patch("rl_emails.cli.Config")
+    def test_onboard_with_quick_only(
+        self,
+        mock_config_cls: MagicMock,
+        mock_asyncio_run: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Test onboard with --quick-only flag."""
+        user_uuid = "123e4567-e89b-12d3-a456-426614174000"
+        monkeypatch.setattr(
+            sys, "argv", ["rl-emails", "onboard", "--user", user_uuid, "--quick-only"]
+        )
+
+        mock_config = MagicMock()
+        mock_config_with_user = MagicMock()
+        mock_config.with_user.return_value = mock_config_with_user
+        mock_config_cls.from_env.return_value = mock_config
+
+        mock_asyncio_run.return_value = None
+
+        cli.main()
+
+        captured = capsys.readouterr()
+        assert "Quick Only: True" in captured.out
+
+    @patch("rl_emails.cli.asyncio.run")
+    @patch("rl_emails.cli.Config")
+    def test_onboard_applies_multi_tenant_context(
+        self,
+        mock_config_cls: MagicMock,
+        mock_asyncio_run: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Test onboard applies multi-tenant context correctly."""
+        from uuid import UUID
+
+        user_uuid = "123e4567-e89b-12d3-a456-426614174000"
+        monkeypatch.setattr(sys, "argv", ["rl-emails", "onboard", "--user", user_uuid])
+
+        mock_config = MagicMock()
+        mock_config_with_user = MagicMock()
+        mock_config.with_user.return_value = mock_config_with_user
+        mock_config_cls.from_env.return_value = mock_config
+
+        mock_asyncio_run.return_value = None
+
+        cli.main()
+
+        # Verify with_user was called with the user UUID
+        mock_config.with_user.assert_called_once_with(UUID(user_uuid))

@@ -291,6 +291,12 @@ def upgrade() -> None:
         sa.Column("behavior_cluster_id", sa.Integer),
         sa.Column("service_cluster_id", sa.Integer),
         sa.Column("temporal_cluster_id", sa.Integer),
+        # Cluster probability columns (used by stage_09)
+        sa.Column("people_cluster_prob", sa.Float),
+        sa.Column("content_cluster_prob", sa.Float),
+        sa.Column("behavior_cluster_prob", sa.Float),
+        sa.Column("service_cluster_prob", sa.Float),
+        sa.Column("temporal_cluster_prob", sa.Float),
         sa.Column(
             "created_at",
             sa.TIMESTAMP(timezone=True),
@@ -344,6 +350,13 @@ def upgrade() -> None:
         "cluster_metadata",
         ["user_id", "is_project", "last_activity_at"],
     )
+    # Unique constraint for ON CONFLICT (used by stage_09)
+    op.create_index(
+        "idx_cluster_metadata_dimension_cluster",
+        "cluster_metadata",
+        ["dimension", "cluster_id"],
+        unique=True,
+    )
 
     # =================================================================
     # EMAIL PRIORITY TABLE (for Phase 3 priority scoring)
@@ -364,6 +377,9 @@ def upgrade() -> None:
         sa.Column("sender_novelty", sa.Float),
         sa.Column("priority_score", sa.Float),
         sa.Column("priority_rank", sa.Integer),
+        # LLM analysis columns (used by stage_10)
+        sa.Column("needs_llm_analysis", sa.Boolean, server_default="false"),
+        sa.Column("llm_reason", sa.Text),
         sa.Column(
             "created_at",
             sa.TIMESTAMP(timezone=True),

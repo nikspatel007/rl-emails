@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from rl_emails.cli import (
+    auth_callback,
     auth_connect,
     auth_disconnect,
     auth_status,
@@ -63,6 +64,32 @@ class TestParseArgsAuth:
             assert args.command == "auth"
             assert args.auth_action == "disconnect"
             assert args.user == test_uuid
+
+    def test_auth_callback_with_user_and_code(self) -> None:
+        """Test auth callback with --user and --code."""
+        test_uuid = str(uuid.uuid4())
+        with patch(
+            "sys.argv",
+            ["rl-emails", "auth", "callback", "--user", test_uuid, "--code", "auth-code-123"],
+        ):
+            args = parse_args()
+            assert args.command == "auth"
+            assert args.auth_action == "callback"
+            assert args.user == test_uuid
+            assert args.code == "auth-code-123"
+
+    def test_auth_callback_requires_user(self) -> None:
+        """Test that auth callback requires --user."""
+        with pytest.raises(SystemExit):
+            with patch("sys.argv", ["rl-emails", "auth", "callback", "--code", "test"]):
+                parse_args()
+
+    def test_auth_callback_requires_code(self) -> None:
+        """Test that auth callback requires --code."""
+        test_uuid = str(uuid.uuid4())
+        with pytest.raises(SystemExit):
+            with patch("sys.argv", ["rl-emails", "auth", "callback", "--user", test_uuid]):
+                parse_args()
 
 
 class TestAuthConnect:
@@ -235,6 +262,64 @@ class TestAuthDisconnect:
             assert "No connection found" in captured.out
 
 
+class TestAuthCallback:
+    """Tests for auth_callback command."""
+
+    def test_invalid_uuid_exits(self) -> None:
+        """Test that invalid UUID exits with error."""
+        args = argparse.Namespace(user="not-a-uuid", code="auth-code")
+        config = Config(database_url="test")
+
+        with pytest.raises(SystemExit):
+            auth_callback(args, config)
+
+    def test_missing_oauth_config_exits(self) -> None:
+        """Test that missing OAuth config exits with error."""
+        args = argparse.Namespace(user=str(uuid.uuid4()), code="auth-code")
+        config = Config(database_url="test")  # No Google OAuth config
+
+        with pytest.raises(SystemExit):
+            auth_callback(args, config)
+
+    def test_callback_success(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Test successful OAuth callback."""
+        test_uuid = str(uuid.uuid4())
+        args = argparse.Namespace(user=test_uuid, code="auth-code-123")
+        config = Config(
+            database_url="postgresql://localhost/test",
+            google_client_id="test-id",
+            google_client_secret="test-secret",
+        )
+
+        with patch("rl_emails.cli.asyncio.run") as mock_run:
+            mock_run.return_value = (True, "Token saved successfully")
+
+            auth_callback(args, config)
+
+            captured = capsys.readouterr()
+            assert "Successfully authenticated" in captured.out
+            assert test_uuid in captured.out
+
+    def test_callback_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Test failed OAuth callback."""
+        test_uuid = str(uuid.uuid4())
+        args = argparse.Namespace(user=test_uuid, code="invalid-code")
+        config = Config(
+            database_url="postgresql://localhost/test",
+            google_client_id="test-id",
+            google_client_secret="test-secret",
+        )
+
+        with patch("rl_emails.cli.asyncio.run") as mock_run:
+            mock_run.return_value = (False, "Invalid authorization code")
+
+            auth_callback(args, config)
+
+            captured = capsys.readouterr()
+            assert "Status: Failed" in captured.out
+            assert "Invalid authorization code" in captured.out
+
+
 class TestGetEnvFile:
     """Tests for get_env_file helper."""
 
@@ -327,6 +412,25 @@ class TestMainFunction:
                 with patch("rl_emails.cli.auth_disconnect") as mock_disconnect:
                     main()
                     mock_disconnect.assert_called_once()
+
+    def test_routes_to_auth_callback(self) -> None:
+        """Test main routes to auth callback."""
+        from rl_emails.cli import main
+
+        test_uuid = str(uuid.uuid4())
+        with patch(
+            "sys.argv",
+            ["rl-emails", "auth", "callback", "--user", test_uuid, "--code", "test-code"],
+        ):
+            with patch("rl_emails.cli.Config.from_env") as mock_config:
+                mock_config.return_value = Config(
+                    database_url="test",
+                    google_client_id="id",
+                    google_client_secret="secret",
+                )
+                with patch("rl_emails.cli.auth_callback") as mock_callback:
+                    main()
+                    mock_callback.assert_called_once()
 
     def test_auth_without_action_shows_usage(self) -> None:
         """Test auth without action shows usage message."""

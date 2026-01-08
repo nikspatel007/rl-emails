@@ -87,6 +87,24 @@ def parse_args() -> argparse.Namespace:
         help="User ID to disconnect",
     )
 
+    # Auth callback (to complete OAuth flow manually)
+    auth_callback = auth_subparsers.add_parser(
+        "callback", help="Complete OAuth flow with authorization code"
+    )
+    auth_callback.add_argument(
+        "--user",
+        type=str,
+        required=True,
+        metavar="UUID",
+        help="User ID to authenticate",
+    )
+    auth_callback.add_argument(
+        "--code",
+        type=str,
+        required=True,
+        help="Authorization code from OAuth redirect URL",
+    )
+
     # Sync subcommand
     sync_parser = subparsers.add_parser("sync", help="Sync emails from Gmail")
     sync_parser.add_argument(
@@ -112,6 +130,40 @@ def parse_args() -> argparse.Namespace:
         "--status",
         action="store_true",
         help="Show sync status instead of syncing",
+    )
+
+    # Onboard subcommand - progressive sync with full pipeline
+    onboard_parser = subparsers.add_parser(
+        "onboard",
+        help="Onboard user with progressive sync (7d quick, then background)",
+    )
+    onboard_parser.add_argument(
+        "--user",
+        type=str,
+        required=True,
+        metavar="UUID",
+        help="User ID to onboard",
+    )
+    onboard_parser.add_argument(
+        "--quick-only",
+        action="store_true",
+        help="Only run quick phase (7 days), skip background sync",
+    )
+    onboard_parser.add_argument(
+        "--skip-embeddings",
+        action="store_true",
+        help="Skip embedding generation",
+    )
+    onboard_parser.add_argument(
+        "--skip-llm",
+        action="store_true",
+        help="Skip LLM classification",
+    )
+    onboard_parser.add_argument(
+        "--llm-limit",
+        type=int,
+        default=50,
+        help="Max emails to classify with LLM per phase (default: 50)",
     )
 
     # Pipeline arguments (for default command)
@@ -343,6 +395,71 @@ def auth_disconnect(args: argparse.Namespace, config: Config) -> None:
     print("=" * 60)
 
 
+def auth_callback(args: argparse.Namespace, config: Config) -> None:
+    """Handle auth callback command to complete OAuth flow."""
+    # Validate user UUID
+    try:
+        user_id = UUID(args.user)
+    except ValueError:
+        print(f"Invalid UUID format: {args.user}", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if Google OAuth is configured
+    if not config.has_google_oauth():
+        print(
+            "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    async def _exchange_code() -> tuple[bool, str]:  # pragma: no cover
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+        from rl_emails.auth.google import GoogleOAuth
+        from rl_emails.repositories.oauth_token import OAuthTokenRepository
+        from rl_emails.services.auth_service import AuthService
+
+        # Convert database URL for async
+        db_url = config.database_url
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        engine = create_async_engine(db_url)
+        async with AsyncSession(engine) as session:
+            oauth = GoogleOAuth(
+                client_id=config.google_client_id or "",
+                client_secret=config.google_client_secret or "",
+                redirect_uri=config.google_redirect_uri,
+            )
+            repo = OAuthTokenRepository(session)
+            service = AuthService(oauth=oauth, token_repo=repo)
+
+            try:
+                await service.complete_auth_flow(
+                    user_id=user_id,
+                    code=args.code,
+                )
+                return True, "Token saved successfully"
+            except Exception as e:
+                return False, str(e)
+
+    success, message = asyncio.run(_exchange_code())
+
+    print("Gmail OAuth Callback")
+    print("=" * 60)
+    print(f"\nUser ID: {user_id}")
+
+    if success:
+        print("Status: Successfully authenticated!")
+        print("\nYou can now sync your emails:")
+        print(f"  uv run rl-emails sync --user {user_id}")
+    else:
+        print("Status: Failed")
+        print(f"Error: {message}")
+
+    print("=" * 60)
+
+
 def sync_emails(args: argparse.Namespace, config: Config) -> None:
     """Handle sync command - sync emails from Gmail."""
     # Validate user UUID
@@ -451,6 +568,138 @@ def _run_sync(user_id: UUID, config: Config, days: int, max_messages: int | None
     print("=" * 60)
 
 
+def onboard_user(args: argparse.Namespace, config: Config) -> None:
+    """Onboard a user with progressive sync and full pipeline processing."""
+    # Validate user UUID
+    try:
+        user_id = UUID(args.user)
+    except ValueError:
+        print(f"Invalid UUID format: {args.user}", file=sys.stderr)
+        sys.exit(1)
+
+    # Apply multi-tenant context
+    config = config.with_user(user_id)
+
+    print("Progressive User Onboarding")
+    print("=" * 60)
+    print(f"\nUser ID: {user_id}")
+    print(f"Quick Only: {args.quick_only}")
+    print(f"Skip Embeddings: {args.skip_embeddings}")
+    print(f"Skip LLM: {args.skip_llm}")
+    print(f"LLM Limit: {args.llm_limit}")
+    print("\nStarting progressive sync...")
+
+    async def _run_onboard() -> None:  # pragma: no cover
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+        from rl_emails.auth.google import GoogleOAuth
+        from rl_emails.integrations.gmail.client import GmailClient
+        from rl_emails.repositories.oauth_token import OAuthTokenRepository
+        from rl_emails.repositories.sync_state import SyncStateRepository
+        from rl_emails.services.auth_service import AuthService
+        from rl_emails.services.progressive_sync import (
+            PhaseConfig,
+            ProgressiveSyncService,
+            SyncPhase,
+        )
+
+        # Convert database URL for async
+        db_url = config.database_url
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        engine = create_async_engine(db_url)
+        async with AsyncSession(engine) as session:
+            # Use AuthService to get a valid (refreshed if needed) token
+            token_repo = OAuthTokenRepository(session)
+            oauth = GoogleOAuth(
+                client_id=config.google_client_id or "",
+                client_secret=config.google_client_secret or "",
+                redirect_uri=config.google_redirect_uri,
+            )
+            auth_service = AuthService(oauth=oauth, token_repo=token_repo)
+
+            try:
+                access_token = await auth_service.get_valid_token(user_id)
+            except ValueError as e:
+                print(f"\nNo Gmail connection found: {e}", file=sys.stderr)
+                print("Run 'rl-emails auth connect' first.", file=sys.stderr)
+                sys.exit(1)
+
+            # Create service with valid token
+            async with GmailClient(access_token=access_token) as gmail_client:
+                sync_repo = SyncStateRepository(session)
+                service = ProgressiveSyncService(
+                    gmail_client=gmail_client,
+                    sync_repo=sync_repo,
+                    session=session,
+                )
+
+                # Build phases
+                phases = [
+                    PhaseConfig(
+                        phase=SyncPhase.QUICK,
+                        days_start=0,
+                        days_end=7,
+                        batch_size=100,
+                        run_embeddings=not args.skip_embeddings,
+                        run_llm=not args.skip_llm,
+                        llm_limit=args.llm_limit,
+                    ),
+                ]
+
+                if not args.quick_only:
+                    phases.append(
+                        PhaseConfig(
+                            phase=SyncPhase.STANDARD,
+                            days_start=7,
+                            days_end=30,
+                            batch_size=200,
+                            run_embeddings=not args.skip_embeddings,
+                            run_llm=not args.skip_llm,
+                            llm_limit=args.llm_limit,
+                        )
+                    )
+
+                # Run progressive sync
+                import time
+
+                start_time = time.time()
+
+                async for progress in service.sync_progressive(
+                    user_id=user_id,
+                    config=config,
+                    phases=phases,
+                ):
+                    phase_name = progress.phase.value.upper()
+                    if progress.phase_complete:
+                        print(f"\n[{phase_name}] Phase Complete!")
+                        print(f"  Emails fetched: {progress.emails_fetched}")
+                        print(f"  Emails processed: {progress.emails_processed}")
+                        print(f"  Features computed: {progress.features_computed}")
+                        print(f"  Embeddings: {progress.embeddings_generated}")
+                        print(f"  LLM classified: {progress.llm_classified}")
+                        print(f"  Clusters updated: {progress.clusters_updated}")
+                        print(f"  Priority computed: {progress.priority_computed}")
+                    elif progress.error:
+                        print(f"\n[{phase_name}] Error: {progress.error}", file=sys.stderr)
+                    else:
+                        # Progress update
+                        total = progress.total_in_phase or "?"
+                        print(
+                            f"\r[{phase_name}] Fetched: {progress.emails_fetched}/{total}, "
+                            f"Processed: {progress.emails_processed}",
+                            end="",
+                            flush=True,
+                        )
+
+                duration = time.time() - start_time
+                print(f"\n\nOnboarding completed in {duration:.1f}s")
+
+    asyncio.run(_run_onboard())
+    print("=" * 60)
+
+
 def run_pipeline(args: argparse.Namespace, config: Config) -> None:
     """Run the main pipeline."""
     # Apply multi-tenant context if provided
@@ -553,11 +802,15 @@ def main() -> None:
             auth_status(args, config)
         elif args.auth_action == "disconnect":
             auth_disconnect(args, config)
+        elif args.auth_action == "callback":
+            auth_callback(args, config)
         else:
-            print("Usage: rl-emails auth {connect|status|disconnect} --user UUID")
+            print("Usage: rl-emails auth {connect|status|disconnect|callback} --user UUID")
             sys.exit(1)
     elif args.command == "sync":
         sync_emails(args, config)
+    elif args.command == "onboard":
+        onboard_user(args, config)
     else:
         run_pipeline(args, config)
 
