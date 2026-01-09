@@ -117,14 +117,14 @@ def parse_args() -> argparse.Namespace:
     sync_parser.add_argument(
         "--days",
         type=int,
-        default=30,
-        help="Number of days to sync (default: 30)",
+        default=15,
+        help="Number of days to sync (default: 15)",
     )
     sync_parser.add_argument(
         "--max-messages",
         type=int,
-        default=None,
-        help="Maximum messages to sync (default: all)",
+        default=1000,
+        help="Maximum messages to sync (default: 1000)",
     )
     sync_parser.add_argument(
         "--status",
@@ -175,8 +175,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=10,
-        help="Number of parallel workers (default: 10)",
+        default=35,
+        help="Number of parallel workers (default: 35)",
     )
     parser.add_argument(
         "--batch-size",

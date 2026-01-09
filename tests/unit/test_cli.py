@@ -22,7 +22,7 @@ class TestParseArgs:
         args = cli.parse_args()
 
         assert args.status is False
-        assert args.workers == 10
+        assert args.workers == 35
         assert args.batch_size == 100
         assert args.skip_embeddings is False
         assert args.skip_llm is False

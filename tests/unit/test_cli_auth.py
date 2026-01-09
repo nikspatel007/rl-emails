@@ -483,7 +483,7 @@ class TestParseArgsSync:
             args = parse_args()
             assert args.command == "sync"
             assert args.user == test_uuid
-            assert args.days == 30  # Default
+            assert args.days == 15  # Default
 
     def test_sync_with_days(self) -> None:
         """Test sync with --days."""
