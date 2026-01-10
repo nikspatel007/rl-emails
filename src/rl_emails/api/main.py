@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from rl_emails.api.config import APIConfig, get_api_config
 from rl_emails.api.database import Database, set_database
@@ -20,6 +21,9 @@ from rl_emails.api.middleware import (
 from rl_emails.api.routes import (
     connections_router,
     health_router,
+    set_inbox_session,
+    set_projects_session,
+    set_tasks_session,
     webhooks_router,
 )
 
@@ -27,6 +31,20 @@ if TYPE_CHECKING:
     pass
 
 logger = structlog.get_logger(__name__)
+
+# Type alias for session factory
+SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+def _setup_session_factories(session_factory: SessionFactory) -> None:
+    """Set up session factories for routes that need database access.
+
+    Args:
+        session_factory: AsyncSession factory to use.
+    """
+    set_projects_session(session_factory)
+    set_tasks_session(session_factory)
+    set_inbox_session(session_factory)
 
 
 @asynccontextmanager
@@ -54,6 +72,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await db.connect()
     set_database(db)
     app.state.db = db
+
+    # Wire up session factories for routes
+    _setup_session_factories(db.session)
 
     await logger.ainfo("database_connected")
 
@@ -115,6 +136,13 @@ def create_app(config: APIConfig | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(connections_router)
     app.include_router(webhooks_router)
+
+    # Import and register project/task/inbox routes
+    from rl_emails.api.routes import inbox_router, projects_router, tasks_router
+
+    app.include_router(projects_router)
+    app.include_router(tasks_router)
+    app.include_router(inbox_router)
 
     return app
 

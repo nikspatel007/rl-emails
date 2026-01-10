@@ -206,6 +206,14 @@ class TestGetCurrentUserOptional:
         assert result is None
 
     @pytest.mark.anyio
+    async def test_returns_none_when_config_is_none_with_token(self, mock_request: Request) -> None:
+        """Test returns None when config is None but token exists."""
+        # Token provided but config is None - should return None
+        result = await get_current_user_optional(mock_request, "Bearer token", None)
+
+        assert result is None
+
+    @pytest.mark.anyio
     async def test_returns_user_when_valid(self, mock_request: Request) -> None:
         """Test returns user when token is valid."""
         config = ClerkConfig(

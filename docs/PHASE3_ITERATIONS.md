@@ -1,10 +1,24 @@
 # Phase 3: FastAPI + Clerk Authentication & Real-Time Sync
 
-## Status: In Progress (Iteration 2 Complete)
+## Status: In Progress (Iteration 5 - Projects & Tasks API)
 
 **Prerequisite**: Phase 2 Complete (Gmail API Integration)
-**Iterations**: 9 (0-8)
+**Iterations**: 9 (0-8) + Enhanced Clustering
 **Goal**: Production-ready API with Clerk auth, multi-provider email connections, real-time sync, and projects/tasks extraction
+
+### Progress Summary
+| Iteration | Status |
+|-----------|--------|
+| 0. Database Models | ✅ Complete |
+| 1. FastAPI Foundation | ✅ Complete |
+| 2. Clerk Authentication | ✅ Complete |
+| 3. Provider Interface | ✅ Complete |
+| 4. Real-Time Sync | ✅ Complete |
+| 5. Projects & Tasks API | 🚧 In Progress |
+| 6. Pipeline Worker | ⏳ Pending |
+| 7. Scheduler | ⏳ Pending |
+| 8. Integration & Docs | ⏳ Pending |
+| Enhanced Clustering | ✅ Complete |
 
 ---
 
@@ -1397,9 +1411,9 @@ class TestFullUserFlow:
 ## Phase 3 Completion Checklist
 
 ### Pre-Implementation
-- [ ] Clerk account and credentials configured
-- [ ] Google Cloud Pub/Sub topic created
-- [ ] Phase 2 complete (Gmail API working)
+- [x] Clerk account and credentials configured
+- [x] Google Cloud Pub/Sub topic created
+- [x] Phase 2 complete (Gmail API working)
 
 ### Iteration 0: Database Models & Population ✅ COMPLETE
 - [x] SQLAlchemy models for Project, Task, PriorityContext (columns added)
@@ -1411,36 +1425,40 @@ class TestFullUserFlow:
 - [x] Marketing email filtering
 - [x] Write tests (105 new tests, 100% coverage)
 
-### Iteration 1: FastAPI Foundation ✅
+### Iteration 1: FastAPI Foundation ✅ COMPLETE
 - [x] Create API module structure
 - [x] Implement app factory
 - [x] Add health endpoints
 - [x] Configure middleware (CORS, logging, rate limiting, error handling)
 - [x] Write tests (126 tests, 100% coverage)
 
-### Iteration 2: Clerk Authentication
-- [ ] Implement JWT validation
-- [ ] Create auth dependencies
-- [ ] Add user sync
-- [ ] Write tests
+### Iteration 2: Clerk Authentication ✅ COMPLETE
+- [x] Implement JWT validation (`ClerkJWTValidator`)
+- [x] Create auth dependencies (`get_current_user`, `require_auth`)
+- [x] Add user sync (`UserSyncService`)
+- [x] API key auth for service-to-service calls
+- [x] Write tests (104 auth tests)
 
-### Iteration 3: Provider Interface
-- [ ] Define abstract interface
-- [ ] Implement Gmail provider
-- [ ] Create provider registry
-- [ ] Write tests
+### Iteration 3: Provider Interface ✅ COMPLETE
+- [x] Define abstract interface (`EmailProvider`)
+- [x] Implement Gmail provider
+- [x] Create provider registry
+- [x] Connection management service
+- [x] Write tests
 
-### Iteration 4: Real-Time Sync
-- [ ] Gmail push notifications
-- [ ] Webhook endpoint
-- [ ] Sync worker
-- [ ] Write tests
+### Iteration 4: Real-Time Sync ✅ COMPLETE
+- [x] Gmail push notifications (Pub/Sub)
+- [x] Webhook endpoint (`/webhooks/gmail`)
+- [x] Watch subscription management
+- [x] Sync worker with history API
+- [x] Write tests
 
-### Iteration 5: Projects & Tasks API
-- [ ] Project endpoints
-- [ ] Task endpoints
-- [ ] Priority inbox
-- [ ] Write tests
+### Iteration 5: Projects & Tasks API 🚧 IN PROGRESS
+- [x] Project endpoints (routes defined)
+- [x] Task endpoints (routes defined)
+- [x] Priority inbox endpoint (routes defined)
+- [ ] Write tests for API endpoints
+- [ ] Integration with entity extraction
 
 ### Iteration 6: Pipeline Worker
 - [ ] Job queue implementation
@@ -1459,6 +1477,15 @@ class TestFullUserFlow:
 - [ ] API documentation
 - [ ] Deployment guide
 - [ ] Performance benchmarks
+
+### Enhanced Clustering (Added) ✅ COMPLETE
+- [x] ClusterMetadata model with temporal strength fields
+- [x] ClusterLabelerService for LLM-based auto-labeling
+- [x] ProjectDetectorService for detecting projects from clusters
+- [x] Temporal strength calculation (recency, velocity, trend)
+- [x] Stage 13: enhance_clusters pipeline stage
+- [x] Migrations for cluster_metadata enhancements
+- [x] Write tests (77 new tests)
 
 ---
 

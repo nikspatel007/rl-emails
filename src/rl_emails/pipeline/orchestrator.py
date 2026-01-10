@@ -167,6 +167,18 @@ class PipelineOrchestrator:
                 runner=self._run_stage_11,
                 requires_llm=True,
             ),
+            StageDefinition(
+                number=12,
+                name="entity_extraction",
+                description="Extract projects and tasks",
+                runner=self._run_stage_12,
+            ),
+            StageDefinition(
+                number=13,
+                name="enhance_clusters",
+                description="Enhanced clustering analysis",
+                runner=self._run_stage_13,
+            ),
         ]
 
     def add_callback(self, callback: Callable[[int, str, StageResult | None], None]) -> None:
@@ -236,6 +248,18 @@ class PipelineOrchestrator:
             batch_size=self.options.batch_size,
             limit=self.options.llm_limit,
         )
+
+    def _run_stage_12(self, config: Config) -> StageResult:
+        """Run stage 12: Entity extraction."""
+        from rl_emails.pipeline.stages import stage_12_entity_extraction
+
+        return stage_12_entity_extraction.run(config)
+
+    def _run_stage_13(self, config: Config) -> StageResult:
+        """Run stage 13: Enhanced clustering analysis."""
+        from rl_emails.pipeline.stages import stage_13_enhance_clusters
+
+        return stage_13_enhance_clusters.run(config)
 
     def validate(self) -> list[str]:
         """Validate configuration before running.

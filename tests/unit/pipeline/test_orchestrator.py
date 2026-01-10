@@ -124,11 +124,13 @@ class TestPipelineOrchestrator:
         orchestrator = PipelineOrchestrator(config)
         info = orchestrator.get_stage_info()
 
-        assert len(info) == 11
+        assert len(info) == 13
         assert info[0]["number"] == 1
         assert info[0]["name"] == "parse_mbox"
         assert info[5]["requires_openai"] is True
         assert info[10]["requires_llm"] is True
+        assert info[11]["name"] == "entity_extraction"
+        assert info[12]["name"] == "enhance_clusters"
 
     @patch("rl_emails.pipeline.orchestrator.check_postgres")
     def test_validate_missing_database_url(self, mock_check: MagicMock) -> None:
@@ -314,14 +316,14 @@ class TestPipelineOrchestrator:
 
         config = self._make_config()
         options = PipelineOptions(
-            start_from=12, skip_embeddings=True, skip_llm=True
-        )  # After all stages
+            start_from=14, skip_embeddings=True, skip_llm=True
+        )  # After all 13 stages
         orchestrator = PipelineOrchestrator(config, options)
 
         result = orchestrator.run(run_migrations=False)
 
         assert result.success is True
-        assert len(result.stages_skipped) == 11
+        assert len(result.stages_skipped) == 13
 
     @patch("rl_emails.pipeline.orchestrator.get_status")
     @patch("rl_emails.pipeline.orchestrator.subprocess.run")
@@ -467,6 +469,28 @@ class TestPipelineOrchestrator:
         result = orchestrator.run_stage(11)
         assert result.success is True
 
+    @patch("rl_emails.pipeline.stages.stage_12_entity_extraction.run")
+    def test_run_stage_12(self, mock_run: MagicMock) -> None:
+        """Test running stage 12."""
+        mock_run.return_value = StageResult(
+            success=True, records_processed=100, duration_seconds=1.0, message="OK"
+        )
+        config = self._make_config()
+        orchestrator = PipelineOrchestrator(config)
+        result = orchestrator.run_stage(12)
+        assert result.success is True
+
+    @patch("rl_emails.pipeline.stages.stage_13_enhance_clusters.run")
+    def test_run_stage_13(self, mock_run: MagicMock) -> None:
+        """Test running stage 13."""
+        mock_run.return_value = StageResult(
+            success=True, records_processed=100, duration_seconds=1.0, message="OK"
+        )
+        config = self._make_config()
+        orchestrator = PipelineOrchestrator(config)
+        result = orchestrator.run_stage(13)
+        assert result.success is True
+
     def test_run_stage_invalid_number(self) -> None:
         """Test running invalid stage number raises error."""
         config = self._make_config()
@@ -483,7 +507,7 @@ class TestPipelineOrchestrator:
         mock_status.return_value = MagicMock()
 
         config = self._make_config()
-        options = PipelineOptions(start_from=12)  # Skip all stages
+        options = PipelineOptions(start_from=14)  # Skip all 13 stages
         orchestrator = PipelineOrchestrator(config, options)
 
         events: list[tuple[int, str]] = []
@@ -494,8 +518,8 @@ class TestPipelineOrchestrator:
         orchestrator.add_callback(callback)
         orchestrator.run(run_migrations=False)
 
-        # All 11 stages should have skip events
-        assert len(events) == 11
+        # All 13 stages should have skip events
+        assert len(events) == 13
         assert all(e[1] == "skip" for e in events)
 
     @patch("rl_emails.pipeline.orchestrator.get_status")

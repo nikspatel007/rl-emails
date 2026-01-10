@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -1929,6 +1929,46 @@ class TestPriorityContextBuilderBuildContexts:
                         False,  # Not important
                         5,
                         True,  # is_real_person
+                    ),
+                ]
+            else:
+                result.fetchone.return_value = None
+            return result
+
+        mock_conn.execute.side_effect = mock_execute
+
+        builder = PriorityContextBuilder(mock_conn)
+        created, _, _ = builder.build_contexts()
+
+        assert created == 1
+
+    def test_temporal_score_medium_age_email(self, mock_conn: MagicMock) -> None:
+        """Test temporal score for medium-age emails (24-72 hours)."""
+        call_count = 0
+        # Create a timestamp 48 hours ago (between 24-72 hours)
+        medium_age_date = datetime.now(UTC) - timedelta(hours=48)
+
+        def mock_execute(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            result = MagicMock()
+            if call_count == 1:
+                result.fetchall.return_value = [
+                    (
+                        1,
+                        0.5,
+                        0.5,
+                        0.5,
+                        0.5,
+                        0.5,
+                        "person@test.com",
+                        "thread123",
+                        medium_age_date,
+                        0.5,
+                        10,
+                        True,
+                        5,
+                        True,
                     ),
                 ]
             else:

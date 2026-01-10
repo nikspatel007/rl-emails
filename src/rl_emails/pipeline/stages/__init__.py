@@ -17,6 +17,8 @@ from rl_emails.pipeline.stages import (
     stage_09_cluster_emails,
     stage_10_compute_priority,
     stage_11_llm_classification,
+    stage_12_entity_extraction,
+    stage_13_enhance_clusters,
 )
 from rl_emails.pipeline.stages.base import StageResult
 
@@ -33,4 +35,6 @@ __all__ = [
     "stage_09_cluster_emails",
     "stage_10_compute_priority",
     "stage_11_llm_classification",
+    "stage_12_entity_extraction",
+    "stage_13_enhance_clusters",
 ]
